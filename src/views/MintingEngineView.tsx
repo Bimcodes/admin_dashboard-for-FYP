@@ -74,7 +74,7 @@ export default function MintingEngineView({
                 />
               </div>
               <p className="mt-1 text-slate-500 text-[11px]">
-                Must match the transaction reference from the university bank account statement.
+                Optional for testing. In production, this must match the transaction reference from the bank.
               </p>
             </div>
 

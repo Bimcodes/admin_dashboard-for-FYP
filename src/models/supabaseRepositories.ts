@@ -233,6 +233,24 @@ export class SupabaseTransactionRepository implements ITransactionRepository {
     if (error) throw new Error(`[TransactionRepo] createTransaction failed: ${error.message}`);
     return toTransaction(data);
   }
+
+  async transfer(
+    type: Transaction['type'],
+    sender: string | null,
+    receiver: string | null,
+    amount: number,
+    reference?: string
+  ): Promise<string> {
+    const { data, error } = await getClient().rpc('transfer_tokens', {
+      p_type: type,
+      p_sender: sender,
+      p_receiver: receiver,
+      p_amount: amount,
+      p_reference: reference ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return data as string;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -268,7 +286,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
   async markBusAsReconciled(busId: string): Promise<Bus> {
     const { data, error } = await getClient()
       .from('vehicles')
-      .update({ is_reconciled: true })
+      .update({ is_reconciled: true, passenger_count: 0, tokens_collected: 0 })
       .eq('id', busId)
       .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .single();
@@ -277,9 +295,10 @@ export class SupabaseFleetRepository implements IFleetRepository {
     return toBus(data);
   }
 
-  async addBus(driverName: string): Promise<Bus> {
-    // Generate a unique BUS-### id
-    const busId = `BUS-${Math.floor(100 + Math.random() * 900)}`;
+  async addBus(busLabel?: string): Promise<Bus> {
+    const { count } = await getClient()
+      .from('vehicles').select('*', { count: 'exact', head: true });
+    const busId = `BUS-${String((count ?? 0) + 1).padStart(3, '0')}`;
 
     // 1. Create a new Bus_Vault wallet.
     //    We use crypto.randomUUID() as owner_id because vehicles.id is TEXT
@@ -302,7 +321,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
       .from('vehicles')
       .insert({
         id: busId,
-        driver_name: driverName,
+        driver_name: busLabel || null,
         passenger_count: 0,
         tokens_collected: 0,
         is_reconciled: false,
@@ -312,30 +331,6 @@ export class SupabaseFleetRepository implements IFleetRepository {
       .single();
 
     if (error) throw new Error(`[FleetRepo] addBus failed: ${error.message}`);
-    return toBus(data);
-  }
-
-  async simulatePassengerRides(busId: string, count: number, fareAmount: number): Promise<Bus> {
-    // Fetch current values, then increment
-    const { data: current, error: fetchError } = await getClient()
-      .from('vehicles')
-      .select('passenger_count, tokens_collected')
-      .eq('id', busId)
-      .single();
-
-    if (fetchError) throw new Error(`[FleetRepo] simulateRides fetch failed: ${fetchError.message}`);
-
-    const newPassengers = Number(current.passenger_count) + count;
-    const newTokens = Number(current.tokens_collected) + count * fareAmount;
-
-    const { data, error } = await getClient()
-      .from('vehicles')
-      .update({ passenger_count: newPassengers, tokens_collected: newTokens })
-      .eq('id', busId)
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
-      .single();
-
-    if (error) throw new Error(`[FleetRepo] simulateRides update failed: ${error.message}`);
     return toBus(data);
   }
 

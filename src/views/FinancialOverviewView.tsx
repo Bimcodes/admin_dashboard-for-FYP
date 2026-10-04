@@ -4,6 +4,7 @@ import { Landmark, Coins, Activity, RefreshCw } from 'lucide-react';
 
 interface FinancialOverviewProps {
   totalMinted: number;
+  totalBurned: number;
   totalCirculation: number;
   treasuryBalance: number;
   isLoading: boolean;
@@ -17,12 +18,15 @@ interface FinancialOverviewProps {
  */
 export default function FinancialOverviewView({
   totalMinted,
+  totalBurned,
   totalCirculation,
   treasuryBalance,
   isLoading,
   error,
   onRefresh,
 }: FinancialOverviewProps) {
+  const difference = totalMinted - (treasuryBalance + totalCirculation + totalBurned);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -136,9 +140,14 @@ export default function FinancialOverviewView({
           <div className="flex items-center justify-center text-slate-500 font-bold">+</div>
           <div className="flex-1 text-center py-2 bg-slate-900/50 rounded border border-slate-800">
             <span className="block text-slate-500 text-[10px]">BURNED (RECONCILED)</span>
-            <span className="text-slate-400 font-semibold mt-1 block">₦{(totalMinted - treasuryBalance - totalCirculation).toLocaleString()}</span>
+            <span className="text-slate-400 font-semibold mt-1 block">₦{totalBurned.toLocaleString()}</span>
           </div>
         </div>
+        {difference !== 0 && (
+          <p className="text-rose-400 text-xs mt-2">
+            Ledger mismatch of NGN {difference.toLocaleString()}. Investigate before continuing.
+          </p>
+        )}
       </div>
     </div>
   );

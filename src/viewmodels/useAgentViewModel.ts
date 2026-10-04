@@ -96,14 +96,8 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
           throw new Error('Selected Agent does not have a wallet.');
         }
 
-        // 3. Double-entry Accounting transaction:
-        // Subtract from Treasury
-        await walletRepository.updateBalance(treasuryWallet.id, -parsedAmount);
-        // Add to Agent Vault
-        await walletRepository.updateBalance(agentWallet.id, parsedAmount);
-
-        // 4. Record Wholesale Transaction
-        await transactionRepository.createTransaction(
+        // 3. Double-entry Accounting transaction (atomic RPC)
+        await transactionRepository.transfer(
           'WHOLESALE',
           treasuryWallet.id,
           agentWallet.id,
@@ -123,22 +117,6 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
     },
     [transferAmount, selectedAgentId, fetchAgentsAndBalances, onTransferSuccess]
   );
-
-  const initPaystackPayment = useCallback(async (agentId: string, amountInKobo: number) => {
-    try {
-      const res = await fetch('/api/admin/init-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId, amountInKobo }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to initialize payment');
-      return data as { authorizationUrl: string };
-    } catch (err: any) {
-      console.error('Error initializing Paystack payment:', err);
-      return null;
-    }
-  }, []);
 
   useEffect(() => {
     fetchAgentsAndBalances();
@@ -160,6 +138,5 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
     setModalErrorMessage,
     wholesaleTransfer,
     refresh: fetchAgentsAndBalances,
-    initPaystackPayment,
   };
 };

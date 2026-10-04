@@ -8,6 +8,7 @@ import { walletRepository, transactionRepository, fleetRepository } from '../mod
  */
 export const useFinancialOverviewViewModel = () => {
   const [totalMinted, setTotalMinted] = useState<number>(0);
+  const [totalBurned, setTotalBurned] = useState<number>(0);
   const [totalCirculation, setTotalCirculation] = useState<number>(0);
   const [treasuryBalance, setTreasuryBalance] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -22,31 +23,21 @@ export const useFinancialOverviewViewModel = () => {
       const treasuryBal = treasuryWallet ? treasuryWallet.balance : 0;
       setTreasuryBalance(treasuryBal);
 
-      // 2. Calculate Total Minted (Sum of all MINT transactions)
       const allTx = await transactionRepository.getTransactions();
-      const mintedSum = allTx
-        .filter((tx) => tx.type === 'MINT')
-        .reduce((sum, tx) => sum + tx.amount, 0);
-      setTotalMinted(mintedSum);
-
-      // 3. Calculate Total in Circulation = Agent Wallets + Student Wallets + Uncleared Bus Fares
-      const allWallets = await walletRepository.getWallets();
+      const ok = allTx.filter((tx) => tx.status === 'SUCCESS');
+      const sumTx = (type: string) =>
+        ok.filter((tx) => tx.type === type).reduce((s, tx) => s + tx.amount, 0);
+        
+      setTotalMinted(sumTx('MINT'));
+      setTotalBurned(sumTx('BURN'));
       
-      const agentSum = allWallets
-        .filter((w) => w.walletType === 'Agent_Vault')
-        .reduce((sum, w) => sum + w.balance, 0);
-
-      const studentSum = allWallets
-        .filter((w) => w.walletType === 'Student_Wallet')
-        .reduce((sum, w) => sum + w.balance, 0);
-
-      const allBuses = await fleetRepository.getBuses();
-      const unclearedFaresSum = allBuses
-        .filter((b) => !b.isReconciled)
-        .reduce((sum, b) => sum + b.tokensCollected, 0);
-
-      const circulationSum = agentSum + studentSum + unclearedFaresSum;
-      setTotalCirculation(circulationSum);
+      const allWallets = await walletRepository.getWallets();
+      const sumWallets = (type: string) =>
+        allWallets.filter((w) => w.walletType === type).reduce((s, w) => s + w.balance, 0);
+        
+      setTotalCirculation(
+        sumWallets('Agent_Vault') + sumWallets('Student_Wallet') + sumWallets('Bus_Vault')
+      );
     } catch (err: any) {
       console.error('Error fetching financial overview balances:', err);
       setError(err?.message || 'Failed to load financial data.');
@@ -61,6 +52,7 @@ export const useFinancialOverviewViewModel = () => {
 
   return {
     totalMinted,
+    totalBurned,
     totalCirculation,
     treasuryBalance,
     isLoading,

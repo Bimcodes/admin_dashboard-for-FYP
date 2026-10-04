@@ -42,13 +42,10 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
         const burnAmount = vault.balance;
 
         if (burnAmount > 0) {
-          // 2. Zero out the Bus_Vault (debit the full balance)
-          await walletRepository.updateBalance(bus.vaultWalletId, -burnAmount);
-
-          // 3. Log a BURN transaction with the real vault wallet UUID as sender.
+          // 2 & 3. Burn tokens (transfer from Bus_Vault to null)
           //    sender = Bus_Vault (tokens leave), receiver = null (tokens destroyed).
           //    reference encodes the reconciliation date for audit trail.
-          await transactionRepository.createTransaction(
+          await transactionRepository.transfer(
             'BURN',
             bus.vaultWalletId,
             null,
@@ -72,25 +69,11 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
     [buses, fetchBuses, onReconcileSuccess]
   );
 
-  const simulateRides = useCallback(
-    async (busId: string) => {
-      try {
-        // Simulate 5 random passengers riding the bus (fare: 100 tokens per passenger)
-        await fleetRepository.simulatePassengerRides(busId, 5, 100);
-        await fetchBuses();
-        if (onReconcileSuccess) onReconcileSuccess(); // Refresh dashboard totals too
-      } catch (err: any) {
-        console.error('Error simulating passenger rides:', err);
-      }
-    },
-    [fetchBuses, onReconcileSuccess]
-  );
-
   const addBus = useCallback(
-    async (driverName: string) => {
-      if (!driverName.trim()) return;
+    async (busLabel?: string) => {
+      if (busLabel && !busLabel.trim()) busLabel = undefined;
       try {
-        await fleetRepository.addBus(driverName);
+        await fleetRepository.addBus(busLabel);
         await fetchBuses();
       } catch (err: any) {
         console.error('Error adding bus:', err);
@@ -109,7 +92,6 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
     error,
     isReconcilingId,
     reconcileBus,
-    simulateRides,
     addBus,
     refresh: fetchBuses,
   };

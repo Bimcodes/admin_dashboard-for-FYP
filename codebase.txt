@@ -1,0 +1,4760 @@
+====================================================
+FILE: .env.local
+====================================================
+
+# Supabase - same project used by the Flutter app
+NEXT_PUBLIC_SUPABASE_URL=https://rkdfcosecgyiqvridwvo.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrZGZjb3NlY2d5aXF2cmlkd3ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1OTQ1MjUsImV4cCI6MjA5OTE3MDUyNX0.cwFSzdDsYT9VJTKPa7BGF4Dxfjg6bKgRPCrTU_WaO8Y
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrZGZjb3NlY2d5aXF2cmlkd3ZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzU5NDUyNSwiZXhwIjoyMDk5MTcwNTI1fQ.qzsjeDO7H5T6TAQIk4dtClXLNaos4e93Ts7vwpBxgoM
+
+# Paystack - replace with your real secret key from dashboard.paystack.com
+PAYSTACK_SECRET_KEY=sk_test_b9f9b60a652b15073e10e81433b4dbebbce7fd6f
+
+
+
+
+====================================================
+FILE: .gitignore
+====================================================
+
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env*.local
+tsconfig.tsbuildinfo
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+
+
+
+
+====================================================
+FILE: eslint.config.mjs
+====================================================
+
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+]);
+
+export default eslintConfig;
+
+
+
+
+====================================================
+FILE: next-env.d.ts
+====================================================
+
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/dev/types/routes.d.ts";
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+
+
+
+
+====================================================
+FILE: next.config.ts
+====================================================
+
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ["192.168.63.190"],
+};
+
+export default nextConfig;
+
+
+
+
+====================================================
+FILE: package.json
+====================================================
+
+{
+  "name": "qr-fare-admin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.3",
+    "lucide-react": "^1.21.0",
+    "next": "16.2.9",
+    "qrcode": "^1.5.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-qr-code": "^2.2.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
+
+
+
+
+====================================================
+FILE: postcss.config.mjs
+====================================================
+
+const config = {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};
+
+export default config;
+
+
+
+
+====================================================
+FILE: src\app\api\admin\create-staff\route.ts
+====================================================
+
+// =============================================================================
+// FILE: src/app/api/admin/create-staff/route.ts
+// LAYER: API Route (Server-Side Only)
+//
+// PURPOSE:
+//   Creates a new staff member (Agent or Driver) in Supabase:
+//     1. Generates a sequential staff code (AGT-001, DRV-001, etc.)
+//     2. Creates a Supabase Auth user (server-side, uses service_role key)
+//     3. Inserts a row into the `users` table
+//     4. Creates a matching wallet (Agent_Vault or Bus_Vault)
+//     5. Returns the credentials for QR code generation on the frontend
+//
+// SECURITY:
+//   Uses the service_role key via createSupabaseAdminClient().
+//   This route is protected by the fact that only authenticated admin sessions
+//   can reach the dashboard that calls it. In production, add session
+//   verification at the top of this handler.
+// =============================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createSupabaseAdminClient } from '../../../../lib/supabaseAdmin';
+import { requireAdmin } from '../../../../lib/requireAdmin';
+import { randomInt } from 'crypto';
+
+/** Generates a cryptographically random password */
+function generateTempPassword(length = 16): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars[randomInt(chars.length)];
+  }
+  return result;
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  try {
+    const body = await request.json();
+    const { name, role, email } = body as { name: string; role: 'Agent' | 'Driver'; email: string };
+
+    if (!name?.trim()) {
+      return NextResponse.json({ error: 'Name is required.' }, { status: 400 });
+    }
+    if (!email?.trim()) {
+      return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
+    }
+    if (role !== 'Agent' && role !== 'Driver') {
+      return NextResponse.json({ error: 'Role must be Agent or Driver.' }, { status: 400 });
+    }
+
+    const adminClient = createSupabaseAdminClient();
+
+    // ── 1. Count existing users of this role for sequential code ─────────────
+    const { count, error: countError } = await adminClient
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', role);
+
+    if (countError) throw new Error(`Count query failed: ${countError.message}`);
+
+    const nextNum = (count ?? 0) + 1;
+    const prefix = role === 'Agent' ? 'AGT' : 'DRV';
+    const staffCode = `${prefix}-${String(nextNum).padStart(3, '0')}`;
+    const walletType = role === 'Agent' ? 'Agent_Vault' : 'Bus_Vault';
+
+    // ── 2. Create Supabase Auth user (service_role bypasses invite flow) ──────
+    const tempPassword = generateTempPassword();
+
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+      email: email.trim(),
+      password: tempPassword,
+      email_confirm: true, // Auto-confirm so they can sign in immediately
+    });
+
+    if (authError) {
+      // Handle duplicate staff code collision (rare, but possible)
+      if (authError.message.includes('already been registered')) {
+        return NextResponse.json(
+          { error: `Staff code ${staffCode} already exists. Please try again.` },
+          { status: 409 }
+        );
+      }
+      throw new Error(`Auth user creation failed: ${authError.message}`);
+    }
+
+    const userId = authData.user.id;
+
+    // ── 3. Insert into users table ────────────────────────────────────────────
+    const { error: userInsertError } = await adminClient
+      .from('users')
+      .insert({ id: userId, name: name.trim(), role });
+
+    if (userInsertError) {
+      // Rollback: delete the auth user we just created
+      await adminClient.auth.admin.deleteUser(userId);
+      throw new Error(`Users table insert failed: ${userInsertError.message}`);
+    }
+
+    // ── 4. Create wallet ──────────────────────────────────────────────────────
+    const { error: walletError } = await adminClient
+      .from('wallets')
+      .insert({ owner_id: userId, wallet_type: walletType, balance: 0 });
+
+    if (walletError) {
+      await adminClient.from('users').delete().eq('id', userId);
+      await adminClient.auth.admin.deleteUser(userId);
+      throw new Error(`Wallet creation failed: ${walletError.message}`);
+    }
+
+    // ── 5. Return credentials for QR generation ───────────────────────────────
+    console.log(`[create-staff] ✅ Created ${role} ${staffCode} (${name})`);
+
+    return NextResponse.json({
+      staffCode,
+      name: name.trim(),
+      role,
+      email: email.trim(),
+      tempPassword,
+      userId,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[create-staff] Error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+
+
+
+====================================================
+FILE: src\app\dashboard\page.tsx
+====================================================
+
+'use client';
+
+import DashboardLayout from '../../views/DashboardLayout';
+
+/**
+ * Dashboard Route Page.
+ * Renders the protected DashboardLayout.
+ */
+export default function DashboardPage() {
+  return <DashboardLayout />;
+}
+
+
+
+
+====================================================
+FILE: src\app\globals.css
+====================================================
+
+@import "tailwindcss";
+
+:root {
+  --background: #020617;
+  --foreground: #f8fafc;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+
+
+
+====================================================
+FILE: src\app\layout.tsx
+====================================================
+
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "QR Fare Admin | Transit Commission Ledger",
+  description: "Secure admin dashboard for managing the QR Fare transit token system — mint tokens, manage agents, monitor fleet, and view transaction history.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+    >
+      <body className="min-h-full flex flex-col">{children}</body>
+    </html>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\app\login\page.tsx
+====================================================
+
+'use client';
+
+import LoginView from '../../views/LoginView';
+
+/**
+ * Login Route Page.
+ * Renders the LoginView.
+ */
+export default function LoginPage() {
+  return <LoginView />;
+}
+
+
+
+
+====================================================
+FILE: src\app\page.tsx
+====================================================
+
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createSupabaseBrowserClient } from '../lib/supabaseClient';
+
+/**
+ * Root page - checks for a live Supabase session.
+ * Redirects to /dashboard if authenticated, or /login if not.
+ */
+export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/login');
+      }
+    };
+
+    checkSession();
+  }, [router]);
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <svg className="animate-spin h-10 w-10 text-indigo-500" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+        <span className="text-slate-400 text-sm font-semibold tracking-wide">Loading Secure Portal...</span>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\app\reset-password\page.tsx
+====================================================
+
+import ResetPasswordView from '@/views/ResetPasswordView';
+
+export const metadata = {
+  title: 'Reset Password | QR Fare',
+  description: 'Set a new password for your QR Fare account.',
+};
+
+export default function ResetPasswordPage() {
+  return <ResetPasswordView />;
+}
+
+
+
+
+====================================================
+FILE: src\lib\requireAdmin.ts
+====================================================
+
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+
+export async function requireAdmin() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false as const, status: 401, error: 'Unauthorized' };
+
+  const { data: row } = await supabase
+    .from('users').select('role').eq('id', user.id).single();
+  
+  if (row?.role !== 'Admin') return { ok: false as const, status: 403, error: 'Forbidden' };
+
+  return { ok: true as const, user };
+}
+
+
+
+
+====================================================
+FILE: src\lib\supabaseAdmin.ts
+====================================================
+
+// =============================================================================
+// FILE: src/lib/supabaseAdmin.ts
+// LAYER: Core / Network (SERVER ONLY)
+//
+// PURPOSE:
+//   Creates a Supabase client with the service_role key.
+//   This bypasses Row Level Security entirely and can create/delete Auth users.
+//
+// ⚠️  CRITICAL SECURITY NOTE:
+//   This file must ONLY be imported in:
+//     - /app/api/**  (Next.js server-side API routes)
+//   NEVER import this in any 'use client' component or the browser bundle.
+//   The service_role key grants full admin access to your entire database.
+//
+// USAGE:
+//   const adminClient = createSupabaseAdminClient();
+//   await adminClient.auth.admin.createUser({ email, password });
+// =============================================================================
+
+import { createClient } from '@supabase/supabase-js';
+
+/**
+ * Creates a Supabase admin client using the service_role key.
+ * Server-side only — never call this in browser code.
+ */
+export function createSupabaseAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error(
+      '[supabaseAdmin] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. ' +
+      'Check your .env.local file.'
+    );
+  }
+
+  return createClient(url, serviceKey, {
+    auth: {
+      // Disable auto session refresh — this is a server-side admin client,
+      // it does not need persistent sessions or token refresh.
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+
+
+
+====================================================
+FILE: src\lib\supabaseClient.ts
+====================================================
+
+// =============================================================================
+// FILE: src/lib/supabaseClient.ts
+// LAYER: Core / Network
+//
+// PURPOSE:
+//   Creates and exports a browser-side Supabase client for use in
+//   Client Components ('use client'). Uses @supabase/ssr which handles
+//   cookie-based session persistence correctly in Next.js.
+//
+// USAGE:
+//   import { createSupabaseBrowserClient } from '@/lib/supabaseClient';
+//   const supabase = createSupabaseBrowserClient();
+//   await supabase.auth.signInWithPassword({ email, password });
+// =============================================================================
+
+import { createBrowserClient } from '@supabase/ssr';
+
+/**
+ * Creates a Supabase client for use in browser/client components.
+ * This is safe to call multiple times — @supabase/ssr handles singleton internally.
+ */
+export function createSupabaseBrowserClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+
+
+
+
+====================================================
+FILE: src\models\index.ts
+====================================================
+
+/**
+ * Service Locator / Exports for Repositories.
+ * This is the entry point for accessing the data layer.
+ * ViewModels import these instances. To swap back to mocks, re-import
+ * Mock*Repository from './mockRepositories' and use those instead.
+ */
+
+import {
+  SupabaseUserRepository,
+  SupabaseWalletRepository,
+  SupabaseTransactionRepository,
+  SupabaseFleetRepository,
+} from './supabaseRepositories';
+import {
+  IUserRepository,
+  IWalletRepository,
+  ITransactionRepository,
+  IFleetRepository,
+} from './repositories.interface';
+
+// ── Live Supabase Repositories ────────────────────────────────────────────────
+export const userRepository: IUserRepository = new SupabaseUserRepository();
+export const walletRepository: IWalletRepository = new SupabaseWalletRepository();
+export const transactionRepository: ITransactionRepository = new SupabaseTransactionRepository();
+export const fleetRepository: IFleetRepository = new SupabaseFleetRepository();
+
+
+
+
+
+====================================================
+FILE: src\models\mockRepositories.ts
+====================================================
+
+import { createStore } from 'zustand/vanilla';
+import { User, Wallet, Transaction, Bus, WalletType } from './types';
+import {
+  IUserRepository,
+  IWalletRepository,
+  ITransactionRepository,
+  IFleetRepository,
+} from './repositories.interface';
+
+// -------------------------------------------------------------
+// Helper to generate UUID-like strings
+// -------------------------------------------------------------
+const generateUUID = () => {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+// -------------------------------------------------------------
+// In-Memory Database State Definition
+// -------------------------------------------------------------
+interface DatabaseState {
+  users: User[];
+  wallets: Wallet[];
+  transactions: Transaction[];
+  buses: Bus[];
+  addUser: (user: User) => void;
+  addWallet: (wallet: Wallet) => void;
+  updateWalletBalance: (walletId: string, balance: number) => void;
+  addTransaction: (tx: Transaction) => void;
+  updateBus: (bus: Bus) => void;
+}
+
+// -------------------------------------------------------------
+// Seed Data
+// -------------------------------------------------------------
+const ADMIN_ID = 'admin-user-id-12345';
+const TREASURY_WALLET_ID = 'treasury-wallet-id-12345';
+
+const AGENT_ID = 'agent-user-id-54321';
+const AGENT_WALLET_ID = 'agent-wallet-id-54321';
+
+const STUDENT_ID = 'student-user-id-99999';
+const STUDENT_WALLET_ID = 'student-wallet-id-99999';
+
+const initialUsers: User[] = [
+  { id: ADMIN_ID, role: 'Admin', name: 'Transport Commission Admin' },
+  { id: AGENT_ID, role: 'Agent', name: 'Campus Gate Agent (John)' },
+  { id: STUDENT_ID, role: 'Student', name: 'Alice Smith (Student)' },
+];
+
+const initialWallets: Wallet[] = [
+  {
+    id: TREASURY_WALLET_ID,
+    ownerId: ADMIN_ID,
+    walletType: 'Treasury',
+    balance: 1000000, // Starts with 1,000,000 pre-seeded (or we can start with 0 and mint)
+  },
+  {
+    id: AGENT_WALLET_ID,
+    ownerId: AGENT_ID,
+    walletType: 'Agent_Vault',
+    balance: 50000,
+  },
+  {
+    id: STUDENT_WALLET_ID,
+    ownerId: STUDENT_ID,
+    walletType: 'Student_Wallet',
+    balance: 15000,
+  },
+];
+
+const initialTransactions: Transaction[] = [
+  {
+    id: generateUUID(),
+    type: 'MINT',
+    senderWalletId: null,
+    receiverWalletId: TREASURY_WALLET_ID,
+    amount: 1000000,
+    timestamp: new Date(Date.now() - 3600000 * 24).toISOString(), // 1 day ago
+    reference: 'DEP-INIT-001',
+    status: 'SUCCESS',
+  },
+  {
+    id: generateUUID(),
+    type: 'WHOLESALE',
+    senderWalletId: TREASURY_WALLET_ID,
+    receiverWalletId: AGENT_WALLET_ID,
+    amount: 50000,
+    timestamp: new Date(Date.now() - 3600000 * 12).toISOString(), // 12 hours ago
+    status: 'SUCCESS',
+  },
+];
+
+const initialBuses: Bus[] = [
+  {
+    id: 'BUS-001',
+    driverName: 'Mr. Babajide',
+    driverId: null,
+    passengerCount: 42,
+    tokensCollected: 4200, // e.g. 100 tokens per passenger
+    isReconciled: false,
+    vaultWalletId: null,
+  },
+  {
+    id: 'BUS-002',
+    driverName: 'Mr. Okafor',
+    driverId: null,
+    passengerCount: 28,
+    tokensCollected: 2800,
+    isReconciled: false,
+    vaultWalletId: null,
+  },
+  {
+    id: 'BUS-003',
+    driverName: 'Mr. Musa',
+    driverId: null,
+    passengerCount: 50,
+    tokensCollected: 5000,
+    isReconciled: true, // already reconciled
+    vaultWalletId: null,
+  },
+];
+
+// Create the vanilla Zustand store for our database
+export const dbStore = createStore<DatabaseState>((set) => ({
+  users: initialUsers,
+  wallets: initialWallets,
+  transactions: initialTransactions,
+  buses: initialBuses,
+  addUser: (user) => set((state) => ({ users: [...state.users, user] })),
+  addWallet: (wallet) => set((state) => ({ wallets: [...state.wallets, wallet] })),
+  updateWalletBalance: (walletId, balance) =>
+    set((state) => ({
+      wallets: state.wallets.map((w) => (w.id === walletId ? { ...w, balance } : w)),
+    })),
+  addTransaction: (tx) => set((state) => ({ transactions: [tx, ...state.transactions] })),
+  updateBus: (bus) =>
+    set((state) => ({
+      buses: state.buses.map((b) => (b.id === bus.id ? bus : b)),
+    })),
+}));
+
+// -------------------------------------------------------------
+// Concrete Implementations of Repositories (Mock Database)
+// -------------------------------------------------------------
+
+export class MockUserRepository implements IUserRepository {
+  async getUsers(): Promise<User[]> {
+    return dbStore.getState().users;
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    const user = dbStore.getState().users.find((u) => u.id === id);
+    return user || null;
+  }
+
+  async createUser(name: string, role: User['role']): Promise<User> {
+    const newUser: User = {
+      id: generateUUID(),
+      name,
+      role,
+    };
+    dbStore.getState().addUser(newUser);
+    return newUser;
+  }
+}
+
+export class MockWalletRepository implements IWalletRepository {
+  async getWallets(): Promise<Wallet[]> {
+    return dbStore.getState().wallets;
+  }
+
+  async getWalletById(id: string): Promise<Wallet | null> {
+    const wallet = dbStore.getState().wallets.find((w) => w.id === id);
+    return wallet || null;
+  }
+
+  async getWalletByOwnerId(ownerId: string): Promise<Wallet | null> {
+    const wallet = dbStore.getState().wallets.find((w) => w.ownerId === ownerId);
+    return wallet || null;
+  }
+
+  async getWalletByType(type: WalletType): Promise<Wallet | null> {
+    const wallet = dbStore.getState().wallets.find((w) => w.walletType === type);
+    return wallet || null;
+  }
+
+  async updateBalance(walletId: string, amount: number): Promise<Wallet> {
+    const wallet = await this.getWalletById(walletId);
+    if (!wallet) throw new Error('Wallet not found');
+
+    const newBalance = wallet.balance + amount;
+    dbStore.getState().updateWalletBalance(walletId, newBalance);
+
+    return { ...wallet, balance: newBalance };
+  }
+
+  async createWallet(ownerId: string, type: WalletType, initialBalance: number = 0): Promise<Wallet> {
+    const newWallet: Wallet = {
+      id: generateUUID(),
+      ownerId,
+      walletType: type,
+      balance: initialBalance,
+    };
+    dbStore.getState().addWallet(newWallet);
+    return newWallet;
+  }
+}
+
+export class MockTransactionRepository implements ITransactionRepository {
+  async getTransactions(): Promise<Transaction[]> {
+    return dbStore.getState().transactions;
+  }
+
+  async createTransaction(
+    type: Transaction['type'],
+    senderWalletId: string | null,
+    receiverWalletId: string | null,
+    amount: number,
+    reference?: string,
+    status: Transaction['status'] = 'SUCCESS'
+  ): Promise<Transaction> {
+    const newTx: Transaction = {
+      id: generateUUID(),
+      type,
+      senderWalletId,
+      receiverWalletId,
+      amount,
+      timestamp: new Date().toISOString(),
+      reference,
+      status,
+    };
+
+    dbStore.getState().addTransaction(newTx);
+    return newTx;
+  }
+
+  async transfer(
+    type: Transaction['type'],
+    sender: string | null,
+    receiver: string | null,
+    amount: number,
+    reference?: string
+  ): Promise<string> {
+    const tx = await this.createTransaction(type, sender, receiver, amount, reference, 'SUCCESS');
+    // In mock, we would manually debit/credit, but let's just do a rough hack or assume tests don't use this heavily for logic since it's just a mock
+    if (sender) dbStore.getState().updateWalletBalance(sender, (await dbStore.getState().wallets.find(w => w.id === sender)!.balance) - amount);
+    if (receiver) dbStore.getState().updateWalletBalance(receiver, (await dbStore.getState().wallets.find(w => w.id === receiver)!.balance) + amount);
+    return tx.id;
+  }
+}
+
+export class MockFleetRepository implements IFleetRepository {
+  async getBuses(): Promise<Bus[]> {
+    return dbStore.getState().buses;
+  }
+
+  async markBusAsReconciled(busId: string): Promise<Bus> {
+    const bus = dbStore.getState().buses.find((b) => b.id === busId);
+    if (!bus) throw new Error('Bus not found');
+
+    const updatedBus = { ...bus, isReconciled: true };
+    dbStore.getState().updateBus(updatedBus);
+    return updatedBus;
+  }
+
+  async addBus(busLabel?: string): Promise<Bus> {
+    const newBus: Bus = {
+      id: `BUS-${Math.floor(100 + Math.random() * 900)}`,
+      driverName: busLabel || null,
+      driverId: null,
+      passengerCount: 0,
+      tokensCollected: 0,
+      isReconciled: false,
+      vaultWalletId: null,
+    };
+    // Add to list by hacking the database state store
+    dbStore.setState((state) => ({
+      buses: [...state.buses, newBus],
+    }));
+    return newBus;
+  }
+
+  async getDriverDailyRegister(): Promise<import('./types').DriverDailyRecord[]> {
+    // Mock returns empty — no fare data available in the in-memory store
+    return [];
+  }
+}
+
+
+
+
+====================================================
+FILE: src\models\repositories.interface.ts
+====================================================
+
+import { User, Wallet, Transaction, Bus, WalletType, DriverDailyRecord } from './types';
+
+/**
+ * Interface Segregation: Specific repository interfaces for each domain concern.
+ * Dependency Inversion: ViewModels will depend on these interfaces, not concrete implementations.
+ */
+
+export interface IUserRepository {
+  getUsers(): Promise<User[]>;
+  getUserById(id: string): Promise<User | null>;
+  createUser(name: string, role: User['role']): Promise<User>;
+}
+
+export interface IWalletRepository {
+  getWallets(): Promise<Wallet[]>;
+  getWalletById(id: string): Promise<Wallet | null>;
+  getWalletByOwnerId(ownerId: string): Promise<Wallet | null>;
+  getWalletByType(type: WalletType): Promise<Wallet | null>;
+  updateBalance(walletId: string, amount: number): Promise<Wallet>;
+  createWallet(ownerId: string, type: WalletType, initialBalance: number): Promise<Wallet>;
+}
+
+export interface ITransactionRepository {
+  getTransactions(): Promise<Transaction[]>;
+  createTransaction(
+    type: Transaction['type'],
+    senderWalletId: string | null,
+    receiverWalletId: string | null,
+    amount: number,
+    reference?: string,
+    status?: Transaction['status']
+  ): Promise<Transaction>;
+  transfer(
+    type: Transaction['type'],
+    sender: string | null,
+    receiver: string | null,
+    amount: number,
+    reference?: string
+  ): Promise<string>;
+}
+
+export interface IFleetRepository {
+  getBuses(): Promise<Bus[]>;
+  markBusAsReconciled(busId: string): Promise<Bus>;
+  addBus(busLabel?: string): Promise<Bus>;
+  getDriverDailyRegister(): Promise<DriverDailyRecord[]>;
+}
+
+
+
+
+
+====================================================
+FILE: src\models\supabaseRepositories.ts
+====================================================
+
+// =============================================================================
+// FILE: src/models/supabaseRepositories.ts
+// LAYER: Model / Data Layer
+//
+// PURPOSE:
+//   Concrete implementations of the IRepository interfaces backed by Supabase.
+//   These replace the MockRepository classes. The ViewModels and PaymentService
+//   never change — only src/models/index.ts swaps which implementation is used.
+//
+// DATABASE TABLES (from the shared Supabase project):
+//   users        — id UUID, role TEXT, name TEXT
+//   wallets      — id UUID, owner_id UUID, wallet_type TEXT, balance NUMERIC
+//   transactions — id UUID, type TEXT, sender_wallet_id UUID?,
+//                  receiver_wallet_id UUID?, amount NUMERIC,
+//                  reference TEXT?, status TEXT, timestamp TIMESTAMPTZ
+//   vehicles     — id TEXT, driver_name TEXT, driver_id UUID?,
+//                  passenger_count INT, tokens_collected NUMERIC,
+//                  is_reconciled BOOLEAN, created_at TIMESTAMPTZ
+//
+// COLUMN MAPPING (DB snake_case → TS camelCase):
+//   owner_id            → ownerId
+//   wallet_type         → walletType
+//   sender_wallet_id    → senderWalletId
+//   receiver_wallet_id  → receiverWalletId
+//   driver_name         → driverName
+//   driver_id           → driverId
+//   passenger_count     → passengerCount
+//   tokens_collected    → tokensCollected
+//   is_reconciled       → isReconciled
+// =============================================================================
+
+import { createSupabaseBrowserClient } from '../lib/supabaseClient';
+import { User, Wallet, Transaction, Bus, WalletType, DriverDailyRecord } from './types';
+import {
+  IUserRepository,
+  IWalletRepository,
+  ITransactionRepository,
+  IFleetRepository,
+} from './repositories.interface';
+
+// Helper: get a fresh Supabase client for each call
+const getClient = () => createSupabaseBrowserClient();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User Repository
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class SupabaseUserRepository implements IUserRepository {
+  async getUsers(): Promise<User[]> {
+    const { data, error } = await getClient()
+      .from('users')
+      .select('id, role, name');
+
+    if (error) throw new Error(`[UserRepo] getUsers failed: ${error.message}`);
+
+    return (data ?? []).map((row) => ({
+      id: row.id,
+      role: row.role as User['role'],
+      name: row.name,
+    }));
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    const { data, error } = await getClient()
+      .from('users')
+      .select('id, role, name')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw new Error(`[UserRepo] getUserById failed: ${error.message}`);
+    if (!data) return null;
+
+    return { id: data.id, role: data.role as User['role'], name: data.name };
+  }
+
+  async createUser(name: string, role: User['role']): Promise<User> {
+    const { data, error } = await getClient()
+      .from('users')
+      .insert({ name, role })
+      .select('id, role, name')
+      .single();
+
+    if (error) throw new Error(`[UserRepo] createUser failed: ${error.message}`);
+
+    return { id: data.id, role: data.role as User['role'], name: data.name };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wallet Repository
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Maps a raw DB row (snake_case) to the Wallet domain type (camelCase).
+ */
+function toWallet(row: Record<string, unknown>): Wallet {
+  return {
+    id: row.id as string,
+    ownerId: row.owner_id as string,
+    walletType: row.wallet_type as WalletType,
+    balance: Number(row.balance),
+  };
+}
+
+export class SupabaseWalletRepository implements IWalletRepository {
+  async getWallets(): Promise<Wallet[]> {
+    const { data, error } = await getClient()
+      .from('wallets')
+      .select('id, owner_id, wallet_type, balance');
+
+    if (error) throw new Error(`[WalletRepo] getWallets failed: ${error.message}`);
+    return (data ?? []).map(toWallet);
+  }
+
+  async getWalletById(id: string): Promise<Wallet | null> {
+    const { data, error } = await getClient()
+      .from('wallets')
+      .select('id, owner_id, wallet_type, balance')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw new Error(`[WalletRepo] getWalletById failed: ${error.message}`);
+    return data ? toWallet(data) : null;
+  }
+
+  async getWalletByOwnerId(ownerId: string): Promise<Wallet | null> {
+    const { data, error } = await getClient()
+      .from('wallets')
+      .select('id, owner_id, wallet_type, balance')
+      .eq('owner_id', ownerId)
+      .maybeSingle();
+
+    if (error) throw new Error(`[WalletRepo] getWalletByOwnerId failed: ${error.message}`);
+    return data ? toWallet(data) : null;
+  }
+
+  async getWalletByType(type: WalletType): Promise<Wallet | null> {
+    const { data, error } = await getClient()
+      .from('wallets')
+      .select('id, owner_id, wallet_type, balance')
+      .eq('wallet_type', type)
+      .maybeSingle();
+
+    if (error) throw new Error(`[WalletRepo] getWalletByType failed: ${error.message}`);
+    return data ? toWallet(data) : null;
+  }
+
+  async updateBalance(walletId: string, amount: number): Promise<Wallet> {
+    // First fetch current balance, then add the delta
+    const current = await this.getWalletById(walletId);
+    if (!current) throw new Error(`[WalletRepo] Wallet ${walletId} not found`);
+
+    const newBalance = current.balance + amount;
+
+    const { data, error } = await getClient()
+      .from('wallets')
+      .update({ balance: newBalance })
+      .eq('id', walletId)
+      .select('id, owner_id, wallet_type, balance')
+      .single();
+
+    if (error) throw new Error(`[WalletRepo] updateBalance failed: ${error.message}`);
+    return toWallet(data);
+  }
+
+  async createWallet(ownerId: string, type: WalletType, initialBalance: number = 0): Promise<Wallet> {
+    const { data, error } = await getClient()
+      .from('wallets')
+      .insert({ owner_id: ownerId, wallet_type: type, balance: initialBalance })
+      .select('id, owner_id, wallet_type, balance')
+      .single();
+
+    if (error) throw new Error(`[WalletRepo] createWallet failed: ${error.message}`);
+    return toWallet(data);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transaction Repository
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Maps a raw DB row (snake_case) to the Transaction domain type (camelCase).
+ */
+function toTransaction(row: Record<string, unknown>): Transaction {
+  return {
+    id: row.id as string,
+    type: row.type as Transaction['type'],
+    senderWalletId: (row.sender_wallet_id as string) ?? null,
+    receiverWalletId: (row.receiver_wallet_id as string) ?? null,
+    amount: Number(row.amount),
+    timestamp: row.timestamp as string,
+    reference: (row.reference as string) ?? undefined,
+    status: (row.status as Transaction['status']) ?? 'SUCCESS',
+  };
+}
+
+export class SupabaseTransactionRepository implements ITransactionRepository {
+  async getTransactions(): Promise<Transaction[]> {
+    const { data, error } = await getClient()
+      .from('transactions')
+      .select('id, type, sender_wallet_id, receiver_wallet_id, amount, timestamp, reference, status')
+      .order('timestamp', { ascending: false });
+
+    if (error) throw new Error(`[TransactionRepo] getTransactions failed: ${error.message}`);
+    return (data ?? []).map(toTransaction);
+  }
+
+  async createTransaction(
+    type: Transaction['type'],
+    senderWalletId: string | null,
+    receiverWalletId: string | null,
+    amount: number,
+    reference?: string,
+    status: Transaction['status'] = 'SUCCESS'
+  ): Promise<Transaction> {
+    const payload: Record<string, unknown> = {
+      type,
+      sender_wallet_id: senderWalletId,
+      receiver_wallet_id: receiverWalletId,
+      amount,
+      status,
+      timestamp: new Date().toISOString(),
+    };
+    if (reference) payload.reference = reference;
+
+    const { data, error } = await getClient()
+      .from('transactions')
+      .insert(payload)
+      .select('id, type, sender_wallet_id, receiver_wallet_id, amount, timestamp, reference, status')
+      .single();
+
+    if (error) throw new Error(`[TransactionRepo] createTransaction failed: ${error.message}`);
+    return toTransaction(data);
+  }
+
+  async transfer(
+    type: Transaction['type'],
+    sender: string | null,
+    receiver: string | null,
+    amount: number,
+    reference?: string
+  ): Promise<string> {
+    const { data, error } = await getClient().rpc('transfer_tokens', {
+      p_type: type,
+      p_sender: sender,
+      p_receiver: receiver,
+      p_amount: amount,
+      p_reference: reference ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return data as string;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fleet Repository (vehicles table)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Maps a raw DB vehicles row (snake_case) to the Bus domain type (camelCase).
+ */
+function toBus(row: Record<string, unknown>): Bus {
+  return {
+    id: row.id as string,
+    driverName: row.driver_name as string,
+    driverId: (row.driver_id as string) ?? null,
+    passengerCount: Number(row.passenger_count),
+    tokensCollected: Number(row.tokens_collected),
+    isReconciled: row.is_reconciled as boolean,
+    vaultWalletId: (row.vault_wallet_id as string) ?? null,
+  };
+}
+
+export class SupabaseFleetRepository implements IFleetRepository {
+  async getBuses(): Promise<Bus[]> {
+    const { data, error } = await getClient()
+      .from('vehicles')
+      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .order('created_at', { ascending: true });
+
+    if (error) throw new Error(`[FleetRepo] getBuses failed: ${error.message}`);
+    return (data ?? []).map(toBus);
+  }
+
+  async markBusAsReconciled(busId: string): Promise<Bus> {
+    const { data, error } = await getClient()
+      .from('vehicles')
+      .update({ is_reconciled: true })
+      .eq('id', busId)
+      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .single();
+
+    if (error) throw new Error(`[FleetRepo] markBusAsReconciled failed: ${error.message}`);
+    return toBus(data);
+  }
+
+  async addBus(busLabel?: string): Promise<Bus> {
+    const { count } = await getClient()
+      .from('vehicles').select('*', { count: 'exact', head: true });
+    const busId = `BUS-${String((count ?? 0) + 1).padStart(3, '0')}`;
+
+    // 1. Create a new Bus_Vault wallet.
+    //    We use crypto.randomUUID() as owner_id because vehicles.id is TEXT
+    //    and cannot be stored in a UUID column. The vehicle links back to the
+    //    wallet via vault_wallet_id instead.
+    const { data: wallet, error: walletError } = await getClient()
+      .from('wallets')
+      .insert({
+        owner_id: crypto.randomUUID(),
+        wallet_type: 'Bus_Vault',
+        balance: 0,
+      })
+      .select('id')
+      .single();
+
+    if (walletError) throw new Error(`[FleetRepo] createVault failed: ${walletError.message}`);
+
+    // 2. Create the vehicle row, storing the vault wallet's UUID
+    const { data, error } = await getClient()
+      .from('vehicles')
+      .insert({
+        id: busId,
+        driver_name: busLabel || null,
+        passenger_count: 0,
+        tokens_collected: 0,
+        is_reconciled: false,
+        vault_wallet_id: wallet.id,
+      })
+      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .single();
+
+    if (error) throw new Error(`[FleetRepo] addBus failed: ${error.message}`);
+    return toBus(data);
+  }
+
+  async getDriverDailyRegister(): Promise<DriverDailyRecord[]> {
+    // Calls the Postgres function get_driver_daily_register() defined in Supabase.
+    // Returns one row per driver per working day, ordered by date desc.
+    const { data, error } = await getClient().rpc('get_driver_daily_register');
+
+    if (error) throw new Error(`[FleetRepo] getDriverDailyRegister failed: ${error.message}`);
+
+    return (data ?? []).map((row: Record<string, unknown>) => ({
+      driverName: row.driver_name as string,
+      driverId:   (row.driver_id as string) ?? null,
+      workDate:   row.work_date as string,   // Postgres DATE returned as "YYYY-MM-DD"
+      tripCount:  Number(row.trip_count),
+      totalFares: Number(row.total_fares),
+    }));
+  }
+}
+
+
+
+
+====================================================
+FILE: src\models\testLedger.ts
+====================================================
+
+import { MockUserRepository, MockWalletRepository, MockTransactionRepository, MockFleetRepository } from './mockRepositories';
+
+async function runTests() {
+  console.log("=== RUNNING QR FARE LEDGER MATH TESTS ===");
+  const walletRepo = new MockWalletRepository();
+  const txRepo = new MockTransactionRepository();
+
+  // Test 1: Initial state
+  const treasuryWallet = await walletRepo.getWalletByType('Treasury');
+  console.log("Initial Treasury Balance:", treasuryWallet?.balance);
+  if (treasuryWallet?.balance !== 1000000) {
+    throw new Error("Treasury balance should start at 1,000,000");
+  }
+
+  // Test 2: Minting
+  console.log("Minting ₦500,000 tokens...");
+  const prevBalance = treasuryWallet?.balance || 0;
+  const mintAmount = 500000;
+  await walletRepo.updateBalance(treasuryWallet!.id, mintAmount);
+  await txRepo.createTransaction('MINT', null, treasuryWallet!.id, mintAmount, 'TEST-DEP-001');
+
+  const updatedTreasury = await walletRepo.getWalletById(treasuryWallet!.id);
+  console.log("New Treasury Balance:", updatedTreasury?.balance);
+  if (updatedTreasury?.balance !== prevBalance + mintAmount) {
+    throw new Error("Minting balance update failed");
+  }
+
+  // Verify transaction is logged
+  const txs = await txRepo.getTransactions();
+  const latestTx = txs[0];
+  if (latestTx.type !== 'MINT' || latestTx.amount !== mintAmount || latestTx.reference !== 'TEST-DEP-001') {
+    throw new Error("Minting transaction logging failed");
+  }
+  console.log("Minting test PASSED");
+
+  // Test 3: Wholesale transfer
+  const agentWallet = await walletRepo.getWalletByType('Agent_Vault');
+  console.log("Initial Agent Balance:", agentWallet?.balance);
+
+  const transferAmount = 100000;
+  console.log(`Transferring ₦${transferAmount} from Treasury to Agent...`);
+
+  // Double-entry transfer
+  await walletRepo.updateBalance(treasuryWallet!.id, -transferAmount);
+  await walletRepo.updateBalance(agentWallet!.id, transferAmount);
+  await txRepo.createTransaction('WHOLESALE', treasuryWallet!.id, agentWallet!.id, transferAmount);
+
+  const finalTreasury = await walletRepo.getWalletById(treasuryWallet!.id);
+  const finalAgent = await walletRepo.getWalletById(agentWallet!.id);
+
+  console.log("Final Treasury Balance:", finalTreasury?.balance);
+  console.log("Final Agent Balance:", finalAgent?.balance);
+
+  if (finalTreasury?.balance !== updatedTreasury!.balance - transferAmount) {
+    throw new Error("Treasury balance double-entry subtraction failed");
+  }
+  if (finalAgent?.balance !== agentWallet!.balance + transferAmount) {
+    throw new Error("Agent balance double-entry addition failed");
+  }
+  console.log("Wholesale transfer test PASSED");
+
+  console.log("=== ALL LEDGER TESTS PASSED SUCCESSFULLY ===");
+}
+
+runTests().catch(err => {
+  console.error("Test failed:", err);
+  process.exit(1);
+});
+
+
+
+
+====================================================
+FILE: src\models\types.ts
+====================================================
+
+/**
+ * Types representing the domain entities in the QR Fare System.
+ * In MVVM, this is the Model's domain entity layer.
+ */
+
+export type UserRole = 'Admin' | 'Agent' | 'Student' | 'Driver';
+
+export interface User {
+  id: string; // UUID
+  role: UserRole;
+  name: string;
+}
+
+export type WalletType = 'Treasury' | 'Agent_Vault' | 'Student_Wallet' | 'Bus_Vault';
+
+export interface Wallet {
+  id: string; // UUID
+  ownerId: string; // UUID - Linked to User
+  walletType: WalletType;
+  balance: number;
+}
+
+export type TransactionType = 'MINT' | 'WHOLESALE' | 'RETAIL' | 'FARE' | 'BURN';
+
+export type TransactionStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
+
+export interface Transaction {
+  id: string; // UUID
+  type: TransactionType;
+  senderWalletId: string | null; // Nullable for MINT
+  receiverWalletId: string | null; // Nullable for BURN
+  amount: number;
+  timestamp: string; // ISO string
+  reference?: string; // Optional fiat deposit reference for MINT
+  status: TransactionStatus;
+}
+
+export interface Bus {
+  id: string; // e.g. "BUS-001"
+  driverName: string | null; // Used as an optional bus label/plate number now
+  driverId: string | null;      // UUID FK to users table (nullable)
+  passengerCount: number;
+  tokensCollected: number;
+  isReconciled: boolean;
+  vaultWalletId: string | null; // UUID of the linked Bus_Vault wallet
+}
+
+/**
+ * A single row from the driver daily register aggregate query.
+ * Each row represents one driver's earnings on one working day.
+ */
+export interface DriverDailyRecord {
+  driverName: string;
+  driverId:   string | null; // UUID, nullable
+  workDate:   string;        // "YYYY-MM-DD" string
+  tripCount:  number;
+  totalFares: number;
+}
+
+
+
+
+====================================================
+FILE: src\proxy.ts
+====================================================
+
+// =============================================================================
+// FILE: src/proxy.ts
+// LAYER: Network Boundary (runs on the server BEFORE any page renders)
+//
+// PURPOSE:
+//   This is the Next.js 16 "Proxy" (formerly called "Middleware" in older
+//   versions — the file and function were renamed in Next.js v16.0.0).
+//   It protects the /dashboard route by verifying the Supabase session
+//   server-side before any React code is allowed to render.
+//
+// HOW IT WORKS:
+//   1. Every HTTP request that matches the `config.matcher` pattern below
+//      is intercepted here, before the target page is loaded.
+//   2. We create a short-lived Supabase server client that reads the
+//      session from the request cookies (where @supabase/ssr stores it).
+//   3. We call supabase.auth.getUser() — this re-validates the JWT with
+//      the Supabase API every time, so it is secure and cannot be spoofed
+//      by tampering with the local cookie. (getSession() is NOT used here
+//      because it only reads the local cookie without re-validation.)
+//   4. Based on the result:
+//        - Unauthenticated + visiting /dashboard → redirect to /login
+//        - Authenticated + visiting /login → redirect to /dashboard
+//        - Everything else → pass through unchanged
+//
+// COOKIE HANDLING (getAll / setAll):
+//   @supabase/ssr requires two cookie methods:
+//   - getAll: reads cookies from the incoming Request so we can identify
+//             the current session.
+//   - setAll: writes refreshed cookies back to the outgoing Response so
+//             that token refreshes are persisted. Without this, users would
+//             get randomly logged out when their access token expires.
+//
+// IMPORTANT — Next.js 16 Breaking Change:
+//   The file is named `proxy.ts` (not `middleware.ts`).
+//   The exported function is named `proxy` (not `middleware`).
+//   Using the old names is silently ignored in Next.js 16 — auth
+//   protection simply would not work.
+//
+// MATCHER:
+//   The matcher tells Next.js which paths trigger this proxy function.
+//   We exclude _next/* (internal build assets), static files, images,
+//   and favicon.ico so we only intercept real page navigations.
+// =============================================================================
+
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+
+/**
+ * The Proxy function — intercepts requests before any page renders.
+ * It validates the Supabase session and enforces route-level access control.
+ */
+export async function proxy(request: NextRequest) {
+  // We start by cloning the request headers. This lets us forward any
+  // cookie mutations (e.g. refreshed tokens) to the browser.
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
+
+  // Create a server-side Supabase client that reads cookies from the
+  // incoming request and writes refreshed cookies to the outgoing response.
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        // getAll: reads every cookie from the incoming request.
+        // Supabase uses this to find the stored session tokens.
+        getAll() {
+          return request.cookies.getAll();
+        },
+
+        // setAll: writes cookies to the outgoing response.
+        // Supabase calls this after a token refresh so the new tokens
+        // are saved in the browser for the next request.
+        setAll(cookiesToSet) {
+          // First, apply the cookies to the request (for this request cycle).
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          // Rebuild the response with the updated request headers.
+          response = NextResponse.next({
+            request,
+          });
+          // Then, apply the cookies to the response (so the browser saves them).
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  // getUser() makes a network call to the Supabase API to validate the JWT.
+  // This is intentionally secure: it cannot be bypassed by forging a cookie.
+  // (getSession() only reads the local cookie without server validation —
+  // it is NOT safe to use for access control decisions.)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+
+  // ── Access Control Rules ──────────────────────────────────────────────────
+
+  // Rule 1: If the user is NOT logged in and is trying to access /dashboard,
+  // send them to /login immediately before any dashboard code runs.
+  if (!user && pathname.startsWith('/dashboard')) {
+    const loginUrl = new URL('/login', request.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Rule 2: If the user IS logged in and navigates to /login, redirect them
+  // straight to the dashboard — they don't need to log in again.
+  if (user && pathname === '/login') {
+    const dashboardUrl = new URL('/dashboard', request.url);
+    return NextResponse.redirect(dashboardUrl);
+  }
+
+  // Rule 3: All other requests (public routes, API routes that match the
+  // pattern, etc.) are allowed through unchanged.
+  return response;
+}
+
+/**
+ * Matcher configuration — defines which request paths trigger this proxy.
+ *
+ * The regex below matches every path EXCEPT:
+ *   - _next/static  — compiled JS, CSS, and other build assets
+ *   - _next/image   — Next.js image optimisation responses
+ *   - favicon.ico   — browser favicon request
+ *   - Files with an extension (e.g. .png, .svg, .woff2)
+ *
+ * This ensures the proxy only runs for real page navigations, not for
+ * asset fetches that have nothing to do with authentication.
+ */
+export const config = {
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?)$).*)',
+  ],
+};
+
+
+
+
+====================================================
+FILE: src\viewmodels\useAgentViewModel.ts
+====================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import { userRepository, walletRepository, transactionRepository } from '../models';
+import { User, Wallet } from '../models/types';
+
+export interface AgentListItem {
+  id: string;
+  name: string;
+  walletId: string;
+  balance: number;
+}
+
+/**
+ * ViewModel for Agent Management & Wholesale Distribution.
+ * Exposes the list of agents, treasury balance, and the transfer method.
+ */
+export const useAgentViewModel = (onTransferSuccess?: () => void) => {
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
+  const [treasuryBalance, setTreasuryBalance] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Wholesale modal state
+  const [transferAmount, setTransferAmount] = useState<string>('');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
+
+  const fetchAgentsAndBalances = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // 1. Get Treasury Balance
+      const treasuryWallet = await walletRepository.getWalletByType('Treasury');
+      setTreasuryBalance(treasuryWallet ? treasuryWallet.balance : 0);
+
+      // 2. Fetch all Users with role "Agent"
+      const allUsers = await userRepository.getUsers();
+      const agentUsers = allUsers.filter((u) => u.role === 'Agent');
+
+      // 3. Match each agent user with their wallet balance
+      const agentList: AgentListItem[] = [];
+      for (const agent of agentUsers) {
+        const wallet = await walletRepository.getWalletByOwnerId(agent.id);
+        agentList.push({
+          id: agent.id,
+          name: agent.name,
+          walletId: wallet ? wallet.id : '',
+          balance: wallet ? wallet.balance : 0,
+        });
+      }
+      setAgents(agentList);
+    } catch (err: any) {
+      console.error('Error fetching agents:', err);
+      setError(err?.message || 'Failed to load agents.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const wholesaleTransfer = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsSubmitting(true);
+      setModalErrorMessage(null);
+      setSuccessMessage(null);
+
+      const parsedAmount = parseFloat(transferAmount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        setModalErrorMessage('Please enter a valid amount greater than zero.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!selectedAgentId) {
+        setModalErrorMessage('Please select a ticket agent.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      try {
+        // 1. Fetch Treasury wallet
+        const treasuryWallet = await walletRepository.getWalletByType('Treasury');
+        if (!treasuryWallet) {
+          throw new Error('Treasury Wallet not found.');
+        }
+
+        // Check sufficient funds in Treasury
+        if (treasuryWallet.balance < parsedAmount) {
+          throw new Error(`Insufficient funds in Treasury. Available: ₦${treasuryWallet.balance.toLocaleString()}`);
+        }
+
+        // 2. Fetch Agent wallet
+        const agentWallet = await walletRepository.getWalletByOwnerId(selectedAgentId);
+        if (!agentWallet) {
+          throw new Error('Selected Agent does not have a wallet.');
+        }
+
+        // 3. Double-entry Accounting transaction (atomic RPC)
+        await transactionRepository.transfer(
+          'WHOLESALE',
+          treasuryWallet.id,
+          agentWallet.id,
+          parsedAmount
+        );
+
+        setSuccessMessage(`Successfully transferred ₦${parsedAmount.toLocaleString()} tokens to Agent Wallet.`);
+        setTransferAmount('');
+        await fetchAgentsAndBalances(); // Refresh lists
+        if (onTransferSuccess) onTransferSuccess();
+      } catch (err: any) {
+        console.error('Error in wholesale transfer:', err);
+        setModalErrorMessage(err?.message || 'An error occurred during transfer.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [transferAmount, selectedAgentId, fetchAgentsAndBalances, onTransferSuccess]
+  );
+
+  useEffect(() => {
+    fetchAgentsAndBalances();
+  }, [fetchAgentsAndBalances]);
+
+  return {
+    agents,
+    treasuryBalance,
+    isLoading,
+    error,
+    transferAmount,
+    setTransferAmount,
+    selectedAgentId,
+    setSelectedAgentId,
+    isSubmitting,
+    successMessage,
+    setSuccessMessage,
+    modalErrorMessage,
+    setModalErrorMessage,
+    wholesaleTransfer,
+    refresh: fetchAgentsAndBalances,
+  };
+};
+
+
+
+
+====================================================
+FILE: src\viewmodels\useDriverRegisterViewModel.ts
+====================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import { fleetRepository } from '../models';
+import { DriverDailyRecord } from '../models/types';
+
+/**
+ * A single driver's aggregated summary across all working days.
+ * Used by DriverRegisterView for the accordion top-level rows.
+ */
+export interface DriverSummary {
+  driverName: string;
+  driverId: string | null;
+  totalDaysWorked: number;
+  totalLifetimeFares: number;
+  totalLifetimeTrips: number;
+  dailyRecords: DriverDailyRecord[]; // ordered newest first (from DB)
+}
+
+/**
+ * ViewModel for the Driver Daily Register admin tab.
+ * Fetches per-driver, per-day FARE aggregates and groups them by driver name.
+ */
+export const useDriverRegisterViewModel = () => {
+  const [summaries, setSummaries] = useState<DriverSummary[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchRegister = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const records = await fleetRepository.getDriverDailyRegister();
+
+      // Group flat rows by driver_name (as requested)
+      const grouped = new Map<string, DriverSummary>();
+
+      for (const rec of records) {
+        if (!grouped.has(rec.driverName)) {
+          grouped.set(rec.driverName, {
+            driverName: rec.driverName,
+            driverId: rec.driverId,
+            totalDaysWorked: 0,
+            totalLifetimeFares: 0,
+            totalLifetimeTrips: 0,
+            dailyRecords: [],
+          });
+        }
+        const summary = grouped.get(rec.driverName)!;
+        summary.totalDaysWorked    += 1;
+        summary.totalLifetimeFares += rec.totalFares;
+        summary.totalLifetimeTrips += rec.tripCount;
+        summary.dailyRecords.push(rec);
+      }
+
+      // Sort drivers by total lifetime fares descending (highest earner first)
+      const sorted = Array.from(grouped.values()).sort(
+        (a, b) => b.totalLifetimeFares - a.totalLifetimeFares
+      );
+
+      setSummaries(sorted);
+    } catch (err: any) {
+      console.error('Error loading driver register:', err);
+      setError(err?.message || 'Failed to load driver register.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRegister();
+  }, [fetchRegister]);
+
+  return { summaries, isLoading, error, refresh: fetchRegister };
+};
+
+
+
+
+====================================================
+FILE: src\viewmodels\useFinancialOverviewViewModel.ts
+====================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import { walletRepository, transactionRepository, fleetRepository } from '../models';
+
+/**
+ * ViewModel for the Financial Overview widget / dashboard home.
+ * In MVVM, this is the ViewModel that exposes states and actions to the Financial Overview View.
+ * It strictly separates the React rendering from the Repository data fetches.
+ */
+export const useFinancialOverviewViewModel = () => {
+  const [totalMinted, setTotalMinted] = useState<number>(0);
+  const [totalBurned, setTotalBurned] = useState<number>(0);
+  const [totalCirculation, setTotalCirculation] = useState<number>(0);
+  const [treasuryBalance, setTreasuryBalance] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchBalances = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // 1. Get Central Treasury Balance
+      const treasuryWallet = await walletRepository.getWalletByType('Treasury');
+      const treasuryBal = treasuryWallet ? treasuryWallet.balance : 0;
+      setTreasuryBalance(treasuryBal);
+
+      const allTx = await transactionRepository.getTransactions();
+      const ok = allTx.filter((tx) => tx.status === 'SUCCESS');
+      const sumTx = (type: string) =>
+        ok.filter((tx) => tx.type === type).reduce((s, tx) => s + tx.amount, 0);
+        
+      setTotalMinted(sumTx('MINT'));
+      setTotalBurned(sumTx('BURN'));
+      
+      const allWallets = await walletRepository.getWallets();
+      const sumWallets = (type: string) =>
+        allWallets.filter((w) => w.walletType === type).reduce((s, w) => s + w.balance, 0);
+        
+      setTotalCirculation(
+        sumWallets('Agent_Vault') + sumWallets('Student_Wallet') + sumWallets('Bus_Vault')
+      );
+    } catch (err: any) {
+      console.error('Error fetching financial overview balances:', err);
+      setError(err?.message || 'Failed to load financial data.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBalances();
+  }, [fetchBalances]);
+
+  return {
+    totalMinted,
+    totalBurned,
+    totalCirculation,
+    treasuryBalance,
+    isLoading,
+    error,
+    refresh: fetchBalances,
+  };
+};
+
+
+
+
+====================================================
+FILE: src\viewmodels\useFleetViewModel.ts
+====================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import { fleetRepository, transactionRepository, walletRepository } from '../models';
+import { Bus } from '../models/types';
+
+/**
+ * ViewModel for Fleet Monitoring & Nightly Reconciliation.
+ * Exposes active buses and the reconcile (burn tokens) operation.
+ */
+export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
+  const [buses, setBuses] = useState<Bus[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isReconcilingId, setIsReconcilingId] = useState<string | null>(null);
+
+  const fetchBuses = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const allBuses = await fleetRepository.getBuses();
+      setBuses(allBuses);
+    } catch (err: any) {
+      console.error('Error fetching buses:', err);
+      setError(err?.message || 'Failed to load fleet data.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const reconcileBus = useCallback(
+    async (busId: string) => {
+      setIsReconcilingId(busId);
+      try {
+        const bus = buses.find((b) => b.id === busId);
+        if (!bus) throw new Error('Bus not found.');
+        if (bus.isReconciled) throw new Error('Bus is already reconciled.');
+        if (!bus.vaultWalletId) throw new Error('Bus has no linked vault wallet. Please re-register this bus.');
+
+        // 1. Fetch the real current vault balance
+        const vault = await walletRepository.getWalletById(bus.vaultWalletId);
+        if (!vault) throw new Error('Bus vault wallet not found in database.');
+
+        const burnAmount = vault.balance;
+
+        if (burnAmount > 0) {
+          // 2 & 3. Burn tokens (transfer from Bus_Vault to null)
+          //    sender = Bus_Vault (tokens leave), receiver = null (tokens destroyed).
+          //    reference encodes the reconciliation date for audit trail.
+          await transactionRepository.transfer(
+            'BURN',
+            bus.vaultWalletId,
+            null,
+            burnAmount,
+            `RECONCILE-${busId}-${new Date().toISOString().split('T')[0]}`
+          );
+        }
+
+        // 4. Mark vehicle as settled in the vehicles table
+        await fleetRepository.markBusAsReconciled(busId);
+
+        await fetchBuses(); // Refresh bus list
+        if (onReconcileSuccess) onReconcileSuccess();
+      } catch (err: any) {
+        console.error('Error reconciling bus:', err);
+        alert(err?.message || 'Failed to reconcile bus payout.');
+      } finally {
+        setIsReconcilingId(null);
+      }
+    },
+    [buses, fetchBuses, onReconcileSuccess]
+  );
+
+  const addBus = useCallback(
+    async (busLabel?: string) => {
+      if (busLabel && !busLabel.trim()) busLabel = undefined;
+      try {
+        await fleetRepository.addBus(busLabel);
+        await fetchBuses();
+      } catch (err: any) {
+        console.error('Error adding bus:', err);
+      }
+    },
+    [fetchBuses]
+  );
+
+  useEffect(() => {
+    fetchBuses();
+  }, [fetchBuses]);
+
+  return {
+    buses,
+    isLoading,
+    error,
+    isReconcilingId,
+    reconcileBus,
+    addBus,
+    refresh: fetchBuses,
+  };
+};
+
+
+
+
+
+====================================================
+FILE: src\viewmodels\useMintingViewModel.ts
+====================================================
+
+import { useState, useCallback } from 'react';
+import { walletRepository, transactionRepository } from '../models';
+
+/**
+ * ViewModel for the Minting Engine (Treasury Management).
+ * Exposes form input states and the secure minting action.
+ */
+export const useMintingViewModel = (onMintSuccess?: () => void) => {
+  const [amount, setAmount] = useState<string>('');
+  const [reference, setReference] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const mintTokens = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsSubmitting(true);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        setErrorMessage('Please enter a valid amount greater than zero.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Reference is optional to speed up demonstrations
+      const finalReference = reference.trim() || undefined;
+
+      try {
+        // 1. Fetch Treasury wallet
+        const treasuryWallet = await walletRepository.getWalletByType('Treasury');
+        if (!treasuryWallet) {
+          throw new Error('Treasury Wallet not found. Please initialize the database.');
+        }
+
+        // 2. Perform atomic token transfer (MINT)
+        await transactionRepository.transfer(
+          'MINT',
+          null, // Sender is null for minting
+          treasuryWallet.id,
+          parsedAmount,
+          finalReference
+        );
+
+        setSuccessMessage(`Successfully minted ₦${parsedAmount.toLocaleString()} tokens to the Central Treasury Wallet.`);
+        setAmount('');
+        setReference('');
+        if (onMintSuccess) onMintSuccess();
+      } catch (err: any) {
+        console.error('Error minting tokens:', err);
+        setErrorMessage(err?.message || 'An error occurred during token minting.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [amount, reference, onMintSuccess]
+  );
+
+  return {
+    amount,
+    setAmount,
+    reference,
+    setReference,
+    isSubmitting,
+    successMessage,
+    errorMessage,
+    mintTokens,
+  };
+};
+
+
+
+
+====================================================
+FILE: src\viewmodels\useStaffViewModel.ts
+====================================================
+
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { userRepository } from '../models';
+import { User } from '../models/types';
+
+export interface StaffCreatedData {
+  staffCode: string;
+  name: string;
+  role: 'Agent' | 'Driver';
+  email: string;
+  tempPassword: string;
+  userId: string;
+}
+
+/**
+ * ViewModel for the Staff Registry tab.
+ * Handles creating new staff (via API route) and listing existing staff.
+ */
+export const useStaffViewModel = () => {
+  // Form state
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'Agent' | 'Driver'>('Agent');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // QR result state (shown after successful creation)
+  const [createdStaff, setCreatedStaff] = useState<StaffCreatedData | null>(null);
+
+  // Staff list
+  const [staffList, setStaffList] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+
+  const fetchStaff = useCallback(async () => {
+    setIsLoading(true);
+    setListError(null);
+    try {
+      const all = await userRepository.getUsers();
+      // Only show Agents and Drivers in the staff registry
+      setStaffList(all.filter((u) => u.role === 'Agent' || u.role === 'Driver'));
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to load staff.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStaff();
+  }, [fetchStaff]);
+
+  const registerStaff = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!name.trim()) {
+        setError('Please enter a full name.');
+        return;
+      }
+      if (!email.trim()) {
+        setError('Please enter an email address.');
+        return;
+      }
+      setIsSubmitting(true);
+      setError(null);
+      setCreatedStaff(null);
+
+      try {
+        const response = await fetch('/api/admin/create-staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim(), email: email.trim(), role }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error ?? 'Failed to register staff member.');
+        }
+
+        setCreatedStaff(data as StaffCreatedData);
+        setName('');
+        setEmail('');
+        await fetchStaff(); // Refresh the list
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'An error occurred.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [name, email, role, fetchStaff]
+  );
+
+  const dismissQr = () => setCreatedStaff(null);
+
+  return {
+    // Form
+    name, setName,
+    email, setEmail,
+    role, setRole,
+    isSubmitting,
+    error,
+    registerStaff,
+    // QR result
+    createdStaff,
+    dismissQr,
+    // Staff list
+    staffList,
+    isLoading,
+    listError,
+    refresh: fetchStaff,
+  };
+};
+
+
+
+
+====================================================
+FILE: src\viewmodels\useTransactionHistoryViewModel.ts
+====================================================
+
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { transactionRepository } from '../models';
+import { Transaction } from '../models/types';
+
+export type TxFilter = 'ALL' | 'MINT' | 'WHOLESALE' | 'RETAIL' | 'FARE' | 'BURN';
+
+/**
+ * ViewModel for the Transaction History tab.
+ * Fetches all transactions from Supabase and exposes filter state.
+ */
+export const useTransactionHistoryViewModel = () => {
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [filter, setFilter] = useState<TxFilter>('ALL');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTransactions = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const txs = await transactionRepository.getTransactions();
+      setAllTransactions(txs);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load transactions.';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
+
+  const filtered = filter === 'ALL'
+    ? allTransactions
+    : allTransactions.filter((tx) => tx.type === filter);
+
+  return {
+    transactions: filtered,
+    totalCount: allTransactions.length,
+    filter,
+    setFilter,
+    isLoading,
+    error,
+    refresh: fetchTransactions,
+  };
+};
+
+
+
+
+====================================================
+FILE: src\views\AgentManagementView.tsx
+====================================================
+
+'use client';
+
+import { useState } from 'react';
+import QRCode from 'react-qr-code';
+import { Send, UserCheck, ShieldAlert, Landmark, X, CreditCard, AlertCircle } from 'lucide-react';
+import { AgentListItem } from '../viewmodels/useAgentViewModel';
+
+interface AgentManagementProps {
+  agents: AgentListItem[];
+  treasuryBalance: number;
+  isLoading: boolean;
+  error: string | null;
+  transferAmount: string;
+  setTransferAmount: (amount: string) => void;
+  selectedAgentId: string;
+  setSelectedAgentId: (id: string) => void;
+  isSubmitting: boolean;
+  successMessage: string | null;
+  setSuccessMessage: (msg: string | null) => void;
+  modalErrorMessage: string | null;
+  setModalErrorMessage: (msg: string | null) => void;
+  onTransferSubmit: (e: React.FormEvent) => void;
+  onRefresh: () => void;
+}
+
+/**
+ * AgentManagementView - UI view for ticket agents and wholesale distribution.
+ * Implements a table listing and a modal transfer overlay.
+ */
+export default function AgentManagementView({
+  agents,
+  treasuryBalance,
+  isLoading,
+  error,
+  transferAmount,
+  setTransferAmount,
+  selectedAgentId,
+  setSelectedAgentId,
+  isSubmitting,
+  successMessage,
+  setSuccessMessage,
+  modalErrorMessage,
+  setModalErrorMessage,
+  onTransferSubmit,
+  onRefresh,
+}: AgentManagementProps) {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const openTransferModal = (agent: AgentListItem) => {
+    setSelectedAgentId(agent.id);
+    setSuccessMessage(null);
+    setModalErrorMessage(null);
+    setTransferAmount('');
+    setIsModalOpen(true);
+  };
+
+  const closeTransferModal = () => {
+    setIsModalOpen(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Agent Management</h1>
+          <p className="text-slate-400 text-sm mt-0.5">Manage ticket agent accounts and distribute wholesale tokens</p>
+        </div>
+        <div className="flex items-center gap-4 bg-slate-900 border border-slate-800 rounded-lg px-4 py-2 text-slate-300 text-sm font-medium">
+          <Landmark className="h-4 w-4 text-indigo-400" />
+          <span>Treasury Float: <strong className="text-white">₦{treasuryBalance.toLocaleString()}</strong></span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Agents Registry Card */}
+      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl backdrop-blur-xl">
+        <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <UserCheck className="h-5 w-5 text-indigo-400" />
+            Approved Ticket Agents Registry
+          </h2>
+          <span className="px-2.5 py-1 bg-slate-850 rounded-full text-xs font-semibold text-slate-400 border border-slate-800">
+            {agents.length} Agents Registered
+          </span>
+        </div>
+
+        {isLoading ? (
+          <div className="py-12 flex justify-center text-slate-500">
+            <svg className="animate-spin h-8 w-8 text-indigo-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
+                  <th className="py-4 px-6">Agent Name</th>
+                  <th className="py-4 px-6">Wallet Identifier</th>
+                  <th className="py-4 px-6">Digital Vault Balance</th>
+                  <th className="py-4 px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-850 text-slate-300">
+                {agents.map((agent) => (
+                  <tr key={agent.id} className="hover:bg-slate-850/30 transition-colors">
+                    <td className="py-4 px-6 font-medium text-white flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs uppercase">
+                        {agent.name.substring(0, 2)}
+                      </div>
+                      {agent.name}
+                    </td>
+                    <td className="py-4 px-6 font-mono text-xs text-slate-500">{agent.walletId}</td>
+                    <td className="py-4 px-6 font-semibold text-white">₦{agent.balance.toLocaleString()}</td>
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openTransferModal(agent)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer shadow-md hover:shadow-indigo-500/15"
+                        >
+                          <Send className="h-3 w-3" />
+                          Wholesale
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Wholesale Transfer Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden relative animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
+              <h3 className="text-md font-bold text-white flex items-center gap-2">
+                <Send className="h-4.5 w-4.5 text-indigo-400" />
+                Wholesale Token Transfer
+              </h3>
+              <button
+                onClick={closeTransferModal}
+                className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              onTransferSubmit(e);
+              // close modal if submit succeeded (successMessage becomes populated in viewmodel, but we want to let form handle it)
+            }} className="p-6 space-y-4">
+              {successMessage && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-emerald-400 text-sm">
+                  {successMessage}
+                </div>
+              )}
+
+              {modalErrorMessage && (
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
+                  {modalErrorMessage}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-400">Recipient Agent</label>
+                <div className="bg-slate-950 border border-slate-850 rounded-lg p-3 text-sm text-slate-200 font-medium flex items-center gap-2">
+                  <div className="h-5 w-5 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] flex items-center justify-center font-bold">AG</div>
+                  {agents.find((a) => a.id === selectedAgentId)?.name || 'Select Agent'}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="amount" className="block text-xs font-semibold text-slate-400 mb-1">
+                  Wholesale Amount (₦)
+                </label>
+                <div className="relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-slate-500 text-sm">₦</span>
+                  </div>
+                  <input
+                    type="number"
+                    id="amount"
+                    value={transferAmount}
+                    onChange={(e) => setTransferAmount(e.target.value)}
+                    className="block w-full pl-8 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="e.g. 50,000"
+                    disabled={isSubmitting || !!successMessage}
+                    min="1"
+                  />
+                </div>
+              </div>
+
+              {/* Show double entry warning */}
+              <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 text-[11px] text-slate-400 flex gap-2">
+                <ShieldAlert className="h-4.5 w-4.5 text-amber-500 shrink-0" />
+                <p>
+                  <strong>Double-Entry Rule:</strong> ₦{parseFloat(transferAmount) || 0} will be deducted from the Central Treasury Float and added to the Agent's Digital Vault simultaneously.
+                </p>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={closeTransferModal}
+                  className="flex-1 py-2 border border-slate-800 text-slate-350 hover:bg-slate-850 hover:text-white rounded-lg text-sm font-semibold transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+                {!successMessage && (
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Transferring...' : 'Confirm Transfer'}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\BusQrCodesView.tsx
+====================================================
+
+'use client';
+
+// =============================================================================
+// FILE: src/views/BusQrCodesView.tsx
+// LAYER: View
+//
+// PURPOSE:
+//   Dedicated admin page that generates and displays a QR code for every
+//   registered bus. Each QR encodes the minimal BUS_BOARDING payload that the
+//   Flutter passenger app parses via BusQrPayload.tryParse().
+//
+// QR PAYLOAD FORMAT (matches Flutter BusQrPayload model):
+//   {
+//     "type":         "BUS_BOARDING",
+//     "vehicle_id":   "BUS-001",
+//     "bus_vault_id": "<uuid>",
+//     "route_name":   "Campus Transit",
+//     "base_fare":    100
+//   }
+//
+// DEPENDENCIES:
+//   - qrcode            — generates QR data URLs client-side
+//   - useFleetViewModel — reuses existing bus data fetching
+// =============================================================================
+
+import { useEffect, useState, useCallback } from 'react';
+import QRCode from 'qrcode';
+import { QrCode, RefreshCw, Download, Bus, AlertCircle, Loader2 } from 'lucide-react';
+import { Bus as BusType } from '../models/types';
+import { fleetRepository } from '../models';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+/** The payload encoded inside each bus QR code. */
+interface BusQrPayload {
+  type: 'BUS_BOARDING';
+  vehicle_id: string;
+  bus_vault_id: string;
+  route_name: string;
+  base_fare: number;
+}
+
+/** Per-bus state: the generated QR data URL (or an error). */
+interface BusQrEntry {
+  bus: BusType;
+  dataUrl: string | null;
+  qrError: string | null;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Builds the JSON payload to be encoded in the QR code for a given bus.
+ * Uses minimal fields: vehicle_id + bus_vault_id, with safe defaults for the
+ * Flutter model's optional fields (route_name, base_fare).
+ */
+function buildPayload(bus: BusType): BusQrPayload {
+  return {
+    type: 'BUS_BOARDING',
+    vehicle_id: bus.id,
+    bus_vault_id: bus.vaultWalletId ?? '',
+    route_name: 'Campus Transit',
+    base_fare: 100,
+  };
+}
+
+/**
+ * Generates a QR code data URL for the given bus.
+ * Returns null and logs an error if the vault wallet ID is missing.
+ */
+async function generateQrDataUrl(bus: BusType): Promise<{ dataUrl: string | null; qrError: string | null }> {
+  if (!bus.vaultWalletId) {
+    return { dataUrl: null, qrError: 'No vault wallet linked — re-register this bus.' };
+  }
+
+  try {
+    const payload = buildPayload(bus);
+    const dataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+      width: 280,
+      margin: 2,
+      color: { dark: '#0f172a', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
+    return { dataUrl, qrError: null };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'QR generation failed';
+    return { dataUrl: null, qrError: msg };
+  }
+}
+
+/**
+ * Triggers a PNG download of the QR code image for the given bus.
+ */
+function downloadQr(dataUrl: string, busId: string) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = `qr-${busId}.png`;
+  link.click();
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function BusQrCodesView() {
+  const [entries, setEntries] = useState<BusQrEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  /**
+   * Fetches all buses from Supabase, then generates a QR code for each one.
+   * Runs in parallel (Promise.all) for performance.
+   */
+  const loadQrCodes = useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    setEntries([]);
+
+    try {
+      const buses = await fleetRepository.getBuses();
+
+      const results = await Promise.all(
+        buses.map(async (bus) => {
+          const { dataUrl, qrError } = await generateQrDataUrl(bus);
+          return { bus, dataUrl, qrError } satisfies BusQrEntry;
+        })
+      );
+
+      setEntries(results);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load buses.';
+      setFetchError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQrCodes();
+  }, [loadQrCodes]);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            <QrCode className="h-6 w-6 text-indigo-400" />
+            Bus QR Codes
+          </h1>
+          <p className="text-slate-400 text-sm mt-0.5">
+            Print or display these QR codes inside each bus. Passengers scan them to pay their fare.
+          </p>
+        </div>
+
+        <button
+          onClick={loadQrCodes}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* ── Fetch Error ──────────────────────────────────────────────────────── */}
+      {fetchError && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-center gap-3 text-rose-400 text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {fetchError}
+        </div>
+      )}
+
+      {/* ── Loading State ────────────────────────────────────────────────────── */}
+      {isLoading && (
+        <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <Loader2 className="h-8 w-8 text-indigo-400 animate-spin" />
+          <p className="text-slate-400 text-sm">Generating QR codes…</p>
+        </div>
+      )}
+
+      {/* ── Empty State ──────────────────────────────────────────────────────── */}
+      {!isLoading && !fetchError && entries.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-24 gap-4 bg-slate-900/40 border border-slate-800 rounded-2xl">
+          <Bus className="h-10 w-10 text-slate-600" />
+          <p className="text-slate-400 text-sm">No buses registered yet.</p>
+          <p className="text-slate-500 text-xs">Add a bus in Fleet Monitoring to generate its QR code.</p>
+        </div>
+      )}
+
+      {/* ── QR Card Grid ─────────────────────────────────────────────────────── */}
+      {!isLoading && entries.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          {entries.map(({ bus, dataUrl, qrError }) => (
+            <div
+              key={bus.id}
+              className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 flex flex-col items-center gap-4 shadow-xl backdrop-blur-xl"
+            >
+              {/* Bus ID badge */}
+              <div className="w-full flex items-center justify-between">
+                <span className="font-mono text-sm font-bold text-indigo-400">{bus.id}</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                    bus.isReconciled
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  }`}
+                >
+                  {bus.isReconciled ? 'Reconciled' : 'Active'}
+                </span>
+              </div>
+
+              {/* QR Code image or error */}
+              {qrError ? (
+                <div className="w-[140px] h-[140px] flex flex-col items-center justify-center gap-2 bg-slate-800/60 rounded-xl border border-rose-500/20">
+                  <AlertCircle className="h-6 w-6 text-rose-400" />
+                  <p className="text-rose-400 text-[10px] text-center px-2">{qrError}</p>
+                </div>
+              ) : dataUrl ? (
+                <div className="bg-white rounded-xl p-2 shadow-md">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={dataUrl}
+                    alt={`QR code for ${bus.id}`}
+                    width={140}
+                    height={140}
+                    className="block"
+                  />
+                </div>
+              ) : null}
+
+              {/* Vault wallet ID (truncated) */}
+              <div className="w-full bg-slate-800/50 rounded-lg px-3 py-2 text-center">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-0.5">Vault Wallet</p>
+                <p className="font-mono text-[10px] text-slate-400 truncate">
+                  {bus.vaultWalletId ?? 'Not linked'}
+                </p>
+              </div>
+
+              {/* Download button */}
+              {dataUrl && (
+                <button
+                  onClick={() => downloadQr(dataUrl, bus.id)}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download PNG
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Info Footer ──────────────────────────────────────────────────────── */}
+      {!isLoading && entries.length > 0 && (
+        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 flex gap-4">
+          <QrCode className="h-6 w-6 text-indigo-400 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-white">How to use these QR codes</h3>
+            <p className="text-xs text-slate-400 leading-relaxed mt-1">
+              Print one QR code and mount it visibly inside the corresponding bus.
+              When a passenger opens the Metro Pass app and scans it, tokens are
+              automatically transferred from their wallet to the bus vault in real time.
+              The driver sees each boarding event instantly on their device.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\DashboardLayout.tsx
+====================================================
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  ShieldCheck,
+  LayoutDashboard,
+  Coins,
+  Users,
+  Bus,
+  LogOut,
+  User,
+  ScrollText,
+  UserCog,
+  ClipboardList,
+  QrCode,
+} from 'lucide-react';
+import { createSupabaseBrowserClient } from '../lib/supabaseClient';
+
+import FinancialOverviewView from './FinancialOverviewView';
+import MintingEngineView from './MintingEngineView';
+import AgentManagementView from './AgentManagementView';
+import FleetMonitoringView from './FleetMonitoringView';
+import TransactionHistoryView from './TransactionHistoryView';
+import StaffRegistrationView from './StaffRegistrationView';
+import DriverRegisterView from './DriverRegisterView';
+import BusQrCodesView from './BusQrCodesView';
+
+import { useFinancialOverviewViewModel } from '../viewmodels/useFinancialOverviewViewModel';
+import { useMintingViewModel } from '../viewmodels/useMintingViewModel';
+import { useAgentViewModel } from '../viewmodels/useAgentViewModel';
+import { useFleetViewModel } from '../viewmodels/useFleetViewModel';
+import { useTransactionHistoryViewModel } from '../viewmodels/useTransactionHistoryViewModel';
+import { useDriverRegisterViewModel } from '../viewmodels/useDriverRegisterViewModel';
+
+type Tab = 'overview' | 'mint' | 'agents' | 'fleet' | 'history' | 'staff' | 'register' | 'qrcodes';
+
+/**
+ * DashboardLayout - The main protected dashboard container.
+ * Renders the Sidebar and header, and manages the active tab.
+ * Hooks up the sub-views with their respective ViewModels (MVVM boundary).
+ */
+export default function DashboardLayout() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [adminName, setAdminName] = useState<string>('Transport Commission Admin');
+
+  // Authentication check — verify real Supabase session on mount
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+      // Fetch the admin's real name from the users table
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      if (userRow?.name) setAdminName(userRow.name);
+    };
+
+    checkSession();
+  }, [router]);
+
+  const handleLogout = async () => {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  // Instantiating the ViewModels
+  const overviewVM = useFinancialOverviewViewModel();
+  const mintVM = useMintingViewModel(overviewVM.refresh);
+  const agentVM = useAgentViewModel(overviewVM.refresh);
+  const fleetVM = useFleetViewModel(overviewVM.refresh);
+  const historyVM = useTransactionHistoryViewModel();
+  const registerVM = useDriverRegisterViewModel();
+
+  // Helper to render the view matching the active tab
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'overview':
+        return (
+          <FinancialOverviewView
+            totalMinted={overviewVM.totalMinted}
+            totalCirculation={overviewVM.totalCirculation}
+            totalBurned={overviewVM.totalBurned}
+            treasuryBalance={overviewVM.treasuryBalance}
+            isLoading={overviewVM.isLoading}
+            error={overviewVM.error}
+            onRefresh={overviewVM.refresh}
+          />
+        );
+      case 'mint':
+        return (
+          <MintingEngineView
+            amount={mintVM.amount}
+            setAmount={mintVM.setAmount}
+            reference={mintVM.reference}
+            setReference={mintVM.setReference}
+            isSubmitting={mintVM.isSubmitting}
+            successMessage={mintVM.successMessage}
+            errorMessage={mintVM.errorMessage}
+            onSubmit={mintVM.mintTokens}
+          />
+        );
+      case 'agents':
+        return (
+          <AgentManagementView
+            agents={agentVM.agents}
+            treasuryBalance={agentVM.treasuryBalance}
+            isLoading={agentVM.isLoading}
+            error={agentVM.error}
+            transferAmount={agentVM.transferAmount}
+            setTransferAmount={agentVM.setTransferAmount}
+            selectedAgentId={agentVM.selectedAgentId}
+            setSelectedAgentId={agentVM.setSelectedAgentId}
+            isSubmitting={agentVM.isSubmitting}
+            successMessage={agentVM.successMessage}
+            setSuccessMessage={agentVM.setSuccessMessage}
+            modalErrorMessage={agentVM.modalErrorMessage}
+            setModalErrorMessage={agentVM.setModalErrorMessage}
+            onTransferSubmit={agentVM.wholesaleTransfer}
+            onRefresh={agentVM.refresh}
+          />
+        );
+      case 'fleet':
+        return (
+          <FleetMonitoringView
+            buses={fleetVM.buses}
+            isLoading={fleetVM.isLoading}
+            error={fleetVM.error}
+            isReconcilingId={fleetVM.isReconcilingId}
+            onReconcile={fleetVM.reconcileBus}
+            onAddBus={fleetVM.addBus}
+          />
+        );
+      case 'history':
+        return (
+          <TransactionHistoryView
+            transactions={historyVM.transactions}
+            totalCount={historyVM.totalCount}
+            filter={historyVM.filter}
+            setFilter={historyVM.setFilter}
+            isLoading={historyVM.isLoading}
+            error={historyVM.error}
+            onRefresh={historyVM.refresh}
+          />
+        );
+      case 'staff':
+        return <StaffRegistrationView />;
+      case 'register':
+        return (
+          <DriverRegisterView
+            summaries={registerVM.summaries}
+            isLoading={registerVM.isLoading}
+            error={registerVM.error}
+            onRefresh={registerVM.refresh}
+          />
+        );
+      case 'qrcodes':
+        return <BusQrCodesView />;
+      default:
+        return null;
+    }
+  };
+
+  const navItems = [
+    { id: 'overview'  as Tab, label: 'Financial Overview',  icon: LayoutDashboard },
+    { id: 'mint'      as Tab, label: 'Minting Engine',      icon: Coins },
+    { id: 'agents'    as Tab, label: 'Agent Management',    icon: Users },
+    { id: 'fleet'     as Tab, label: 'Fleet Monitoring',    icon: Bus },
+    { id: 'qrcodes'   as Tab, label: 'Bus QR Codes',        icon: QrCode },
+    { id: 'history'   as Tab, label: 'Transaction History', icon: ScrollText },
+    { id: 'staff'     as Tab, label: 'Staff Registry',      icon: UserCog },
+    { id: 'register'  as Tab, label: 'Driver Register',     icon: ClipboardList },
+  ];
+
+  return (
+    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      {/* Sidebar */}
+      <aside className="w-64 bg-slate-900 border-r border-slate-800/80 flex flex-col z-20 shrink-0">
+        {/* Logo and Header */}
+        <div className="p-6 border-b border-slate-800/80 flex items-center gap-3 bg-slate-950/30">
+          <div className="h-9 w-9 bg-gradient-to-tr from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
+            <ShieldCheck className="h-5.5 w-5.5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-white tracking-wide">Transit Comm.</h1>
+            <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-widest block mt-0.5">Admin Ledger</span>
+          </div>
+        </div>
+
+        {/* Navigation links */}
+        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  // Refresh ViewModel states when changing tabs
+                  if (item.id === 'overview')  overviewVM.refresh();
+                  if (item.id === 'agents')    agentVM.refresh();
+                  if (item.id === 'fleet')     fleetVM.refresh();
+                  if (item.id === 'history')   historyVM.refresh();
+                  if (item.id === 'register')  registerVM.refresh();
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/15'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-850/50'
+                }`}
+              >
+                <Icon className={`h-4.5 w-4.5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* User profile & Logout */}
+        <div className="p-4 border-t border-slate-800/85 bg-slate-950/20 flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-350 font-semibold text-sm">
+              <User className="h-4.5 w-4.5" />
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-xs font-semibold text-white truncate">{adminName}</p>
+              <span className="text-[10px] text-slate-500">System Admin</span>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 py-2 border border-slate-800 hover:border-rose-500/20 hover:bg-rose-500/5 text-slate-400 hover:text-rose-400 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Log Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Panel */}
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Background blobs for aesthetics */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/5 rounded-full blur-3xl -z-10"></div>
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-violet-500/5 rounded-full blur-3xl -z-10"></div>
+
+        {/* Top Header */}
+        <header className="h-16 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-md flex items-center justify-between px-8 z-10">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs text-slate-400 font-medium">Transit Network online</span>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-slate-400 font-semibold bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-1.5">
+            <span>Admin Active</span>
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-y-auto px-8 py-8">
+          {renderTabContent()}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\DriverRegisterView.tsx
+====================================================
+
+'use client';
+
+import { useState } from 'react';
+import {
+  ClipboardList,
+  ChevronDown,
+  ChevronUp,
+  User,
+  Calendar,
+  TrendingUp,
+  RefreshCw,
+  AlertCircle,
+} from 'lucide-react';
+import { DriverSummary } from '../viewmodels/useDriverRegisterViewModel';
+
+interface DriverRegisterViewProps {
+  summaries: DriverSummary[];
+  isLoading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}
+
+/**
+ * DriverRegisterView — Admin tab showing a per-driver accordion register.
+ *
+ * Top level: one row per driver with lifetime totals.
+ * Expanded:  daily breakdown (date | trips | fares collected).
+ *
+ * Matches the existing dark-slate dashboard design language.
+ */
+export default function DriverRegisterView({
+  summaries,
+  isLoading,
+  error,
+  onRefresh,
+}: DriverRegisterViewProps) {
+  const [expandedDriver, setExpandedDriver] = useState<string | null>(null);
+
+  const toggleDriver = (driverName: string) => {
+    setExpandedDriver((prev) => (prev === driverName ? null : driverName));
+  };
+
+  // Format a "YYYY-MM-DD" date string to a human-readable form, e.g. "02 Oct 2026"
+  const formatDate = (isoDate: string): string => {
+    const [year, month, day] = isoDate.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Driver Register</h1>
+          <p className="text-slate-400 text-sm mt-0.5">
+            Daily fare collection record for every driver — click a row to expand
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-center gap-3 text-rose-400 text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {/* Loading skeleton */}
+      {isLoading && (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-16 bg-slate-900/60 border border-slate-800/80 rounded-2xl animate-pulse"
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && !error && summaries.length === 0 && (
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-12 text-center">
+          <ClipboardList className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-400 font-medium">No fare records yet</p>
+          <p className="text-slate-600 text-sm mt-1">
+            Records will appear here once drivers start collecting fares.
+          </p>
+        </div>
+      )}
+
+      {/* Driver accordion list */}
+      {!isLoading && summaries.length > 0 && (
+        <div className="space-y-3">
+          {summaries.map((driver, idx) => {
+            const isOpen = expandedDriver === driver.driverName;
+            return (
+              <div
+                key={driver.driverName}
+                className="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl backdrop-blur-xl"
+              >
+                {/* ── Driver summary row (clickable) ── */}
+                <button
+                  onClick={() => toggleDriver(driver.driverName)}
+                  className="w-full flex items-center gap-4 px-6 py-4 hover:bg-slate-850/40 transition-colors text-left cursor-pointer"
+                >
+                  {/* Rank badge */}
+                  <span className="h-8 w-8 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-bold text-indigo-400 shrink-0">
+                    {idx + 1}
+                  </span>
+
+                  {/* Driver avatar */}
+                  <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                    <User className="h-4 w-4 text-slate-400" />
+                  </div>
+
+                  {/* Name */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{driver.driverName}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Driver</p>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="hidden sm:flex items-center gap-6 text-right">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">Days Worked</p>
+                      <p className="text-sm font-semibold text-white mt-0.5 flex items-center gap-1 justify-end">
+                        <Calendar className="h-3.5 w-3.5 text-indigo-400" />
+                        {driver.totalDaysWorked}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">Total Trips</p>
+                      <p className="text-sm font-semibold text-white mt-0.5">
+                        {driver.totalLifetimeTrips.toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">Lifetime Fares</p>
+                      <p className="text-sm font-bold text-emerald-400 mt-0.5 flex items-center gap-1 justify-end">
+                        <TrendingUp className="h-3.5 w-3.5" />
+                        ₦{driver.totalLifetimeFares.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Expand chevron */}
+                  <div className="ml-2 text-slate-500">
+                    {isOpen ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </div>
+                </button>
+
+                {/* ── Daily breakdown (expanded) ── */}
+                {isOpen && (
+                  <div className="border-t border-slate-800/80">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
+                            <th className="py-3 px-6">Date</th>
+                            <th className="py-3 px-6">Trips</th>
+                            <th className="py-3 px-6">Fares Collected</th>
+                            <th className="py-3 px-6">Avg per Trip</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/50 text-slate-300">
+                          {driver.dailyRecords.map((rec) => (
+                            <tr
+                              key={rec.workDate}
+                              className="hover:bg-slate-850/30 transition-colors"
+                            >
+                              <td className="py-3 px-6 text-sm font-medium text-white">
+                                {formatDate(rec.workDate)}
+                              </td>
+                              <td className="py-3 px-6 text-sm">
+                                {rec.tripCount.toLocaleString()} passengers
+                              </td>
+                              <td className="py-3 px-6 text-sm font-semibold text-emerald-400">
+                                ₦{rec.totalFares.toLocaleString()}
+                              </td>
+                              <td className="py-3 px-6 text-sm text-slate-400">
+                                ₦
+                                {rec.tripCount > 0
+                                  ? Math.round(rec.totalFares / rec.tripCount).toLocaleString()
+                                  : '0'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        {/* Driver subtotal footer */}
+                        <tfoot>
+                          <tr className="bg-slate-950/30 border-t border-slate-800/80 text-xs font-bold text-slate-300 uppercase tracking-wider">
+                            <td className="py-3 px-6">Total</td>
+                            <td className="py-3 px-6">
+                              {driver.totalLifetimeTrips.toLocaleString()} passengers
+                            </td>
+                            <td className="py-3 px-6 text-emerald-400">
+                              ₦{driver.totalLifetimeFares.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-6 text-slate-500">
+                              {driver.totalDaysWorked} day{driver.totalDaysWorked !== 1 ? 's' : ''}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\FinancialOverviewView.tsx
+====================================================
+
+'use client';
+
+import { Landmark, Coins, Activity, RefreshCw } from 'lucide-react';
+
+interface FinancialOverviewProps {
+  totalMinted: number;
+  totalBurned: number;
+  totalCirculation: number;
+  treasuryBalance: number;
+  isLoading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}
+
+/**
+ * FinancialOverviewView - Dumb UI component.
+ * Displays widgets showing Minted, Circulation, and Treasury balances.
+ */
+export default function FinancialOverviewView({
+  totalMinted,
+  totalBurned,
+  totalCirculation,
+  treasuryBalance,
+  isLoading,
+  error,
+  onRefresh,
+}: FinancialOverviewProps) {
+  const difference = totalMinted - (treasuryBalance + totalCirculation + totalBurned);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Financial Overview</h1>
+          <p className="text-slate-400 text-sm mt-0.5">Real-time snapshot of the transit digital economy</p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-lg text-sm text-slate-300 font-medium transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          {isLoading ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Grid of Financial Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Central Treasury Balance */}
+        <div className="relative overflow-hidden bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-xl group hover:border-indigo-500/30 transition-all duration-300">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl group-hover:bg-indigo-500/10 transition-all duration-500"></div>
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
+                Central Treasury
+              </span>
+              <p className="text-3xl font-bold text-white tracking-tight mt-1">
+                ₦{isLoading ? '...' : treasuryBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-slate-400 mt-2">
+                Available to sell to approved Agents
+              </p>
+            </div>
+            <div className="h-12 w-12 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform duration-300">
+              <Landmark className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        {/* Total in Circulation */}
+        <div className="relative overflow-hidden bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-xl group hover:border-violet-500/30 transition-all duration-300">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/10 transition-all duration-500"></div>
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-violet-400 uppercase tracking-wider">
+                Total in Circulation
+              </span>
+              <p className="text-3xl font-bold text-white tracking-tight mt-1">
+                ₦{isLoading ? '...' : totalCirculation.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-slate-400 mt-2">
+                Agent + Student Wallets + Uncleared Bus Fares
+              </p>
+            </div>
+            <div className="h-12 w-12 bg-violet-500/10 border border-violet-500/20 rounded-xl flex items-center justify-center text-violet-400 group-hover:scale-110 transition-transform duration-300">
+              <Activity className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+
+        {/* Total Minted */}
+        <div className="relative overflow-hidden bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-xl group hover:border-emerald-500/30 transition-all duration-300">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-2xl group-hover:bg-emerald-500/10 transition-all duration-500"></div>
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+                Total Minted (All-Time)
+              </span>
+              <p className="text-3xl font-bold text-white tracking-tight mt-1">
+                ₦{isLoading ? '...' : totalMinted.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-slate-400 mt-2">
+                All-time fiat deposits converted to digital ledger
+              </p>
+            </div>
+            <div className="h-12 w-12 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform duration-300">
+              <Coins className="h-6 w-6" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Overview visual ledger guide for the user */}
+      <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 mt-6">
+        <h3 className="text-sm font-semibold text-white mb-2">Ledger Equation Check</h3>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          The QR Fare System operates a strictly closed-loop ledger. At any point in time:
+        </p>
+        <div className="flex flex-col sm:flex-row gap-4 mt-3 bg-slate-950/60 p-4 border border-slate-850 rounded-lg font-mono text-xs">
+          <div className="flex-1 text-center py-2 bg-slate-900/50 rounded border border-slate-800">
+            <span className="block text-slate-500 text-[10px]">TOTAL MINTED</span>
+            <span className="text-emerald-400 font-semibold mt-1 block">₦{totalMinted.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center justify-center text-slate-500 font-bold">=</div>
+          <div className="flex-1 text-center py-2 bg-slate-900/50 rounded border border-slate-800">
+            <span className="block text-slate-500 text-[10px]">TREASURY BALANCE</span>
+            <span className="text-indigo-400 font-semibold mt-1 block">₦{treasuryBalance.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center justify-center text-slate-500 font-bold">+</div>
+          <div className="flex-1 text-center py-2 bg-slate-900/50 rounded border border-slate-800">
+            <span className="block text-slate-500 text-[10px]">IN CIRCULATION</span>
+            <span className="text-violet-400 font-semibold mt-1 block">₦{totalCirculation.toLocaleString()}</span>
+          </div>
+          <div className="flex items-center justify-center text-slate-500 font-bold">+</div>
+          <div className="flex-1 text-center py-2 bg-slate-900/50 rounded border border-slate-800">
+            <span className="block text-slate-500 text-[10px]">BURNED (RECONCILED)</span>
+            <span className="text-slate-400 font-semibold mt-1 block">₦{totalBurned.toLocaleString()}</span>
+          </div>
+        </div>
+        {difference !== 0 && (
+          <p className="text-rose-400 text-xs mt-2">
+            Ledger mismatch of NGN {difference.toLocaleString()}. Investigate before continuing.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\FleetMonitoringView.tsx
+====================================================
+
+'use client';
+
+import { useState } from 'react';
+import { Bus, Play, CheckCircle2, UserPlus, Flame, AlertCircle } from 'lucide-react';
+import { Bus as BusType } from '../models/types';
+
+interface FleetMonitoringProps {
+  buses: BusType[];
+  isLoading: boolean;
+  error: string | null;
+  isReconcilingId: string | null;
+  onReconcile: (id: string) => void;
+  onAddBus: (busLabel?: string) => void;
+}
+
+/**
+ * FleetMonitoringView - View layer for Fleet Monitoring & Nightly Reconciliation.
+ * Allows driver payouts, token burning, and simulation of live fares.
+ */
+export default function FleetMonitoringView({
+  buses,
+  isLoading,
+  error,
+  isReconcilingId,
+  onReconcile,
+  onAddBus,
+}: FleetMonitoringProps) {
+  const [newBusLabel, setNewBusLabel] = useState('');
+
+  const handleAddBusSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onAddBus(newBusLabel);
+    setNewBusLabel('');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring & Nightly Reconciliation</h1>
+          <p className="text-slate-400 text-sm mt-0.5">Track live bus earnings and settle driver payouts by burning tokens</p>
+        </div>
+
+        {/* Add Bus Mini Form */}
+        <form onSubmit={handleAddBusSubmit} className="flex gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 max-w-sm w-full sm:w-auto">
+          <input
+            type="text"
+            value={newBusLabel}
+            onChange={(e) => setNewBusLabel(e.target.value)}
+            placeholder="Bus Label (Optional)"
+            className="bg-transparent border-none text-xs text-white placeholder-slate-500 pl-3 focus:outline-none focus:ring-0 w-full sm:w-44"
+          />
+          <button
+            type="submit"
+            className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
+          >
+            <Bus className="h-3.5 w-3.5" />
+            Add Bus
+          </button>
+        </form>
+      </div>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Fleet Overview Table */}
+      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl backdrop-blur-xl">
+        <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Bus className="h-5 w-5 text-indigo-400" />
+            Active Fleet Status & Ledger Settle
+          </h2>
+          <span className="px-2.5 py-1 bg-slate-850 rounded-full text-xs font-semibold text-slate-400 border border-slate-800">
+            {buses.length} Active Routes
+          </span>
+        </div>
+
+        {isLoading ? (
+          <div className="py-12 flex justify-center">
+            <svg className="animate-spin h-8 w-8 text-indigo-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
+                  <th className="py-4 px-6">Bus ID</th>
+                  <th className="py-4 px-6">Label / Plate</th>
+                  <th className="py-4 px-6">Riders (Today)</th>
+                  <th className="py-4 px-6">Fares Collected</th>
+                  <th className="py-4 px-6">Ledger Status</th>
+                  <th className="py-4 px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-850 text-slate-300">
+                {buses.map((bus) => (
+                  <tr key={bus.id} className="hover:bg-slate-850/30 transition-colors">
+                    <td className="py-4 px-6 font-mono text-xs font-bold text-indigo-400">{bus.id}</td>
+                    <td className="py-4 px-6 font-medium text-white">{bus.driverName || '—'}</td>
+                    <td className="py-4 px-6">{bus.passengerCount} passengers</td>
+                    <td className="py-4 px-6 font-semibold text-white">₦{bus.tokensCollected.toLocaleString()}</td>
+                    <td className="py-4 px-6">
+                      {bus.isReconciled ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          Reconciled & Burned
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          Uncleared Fare
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-4 px-6 text-right space-x-2">
+                      {!bus.isReconciled && (
+                        <>
+                          <button
+                            onClick={() => onReconcile(bus.id)}
+                            disabled={isReconcilingId === bus.id}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer shadow-md hover:shadow-rose-500/15 disabled:opacity-50"
+                          >
+                            {isReconcilingId === bus.id ? (
+                              'Processing...'
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Mark as Paid
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Burn Explanation Box */}
+      <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 flex gap-4">
+        <Flame className="h-7 w-7 text-rose-500 shrink-0 mt-0.5" />
+        <div>
+          <h3 className="text-sm font-semibold text-white">How does Token Burning work?</h3>
+          <p className="text-xs text-slate-400 leading-relaxed mt-1">
+            When a driver completes their shift, they submit their QR tickets representing the <strong>Uncleared Bus Fares</strong>.
+            Clicking <strong>Mark as Paid</strong> signifies that the Transport Commission has paid the driver in real physical cash (fiat).
+            As double-entry, those digital tokens are permanently <strong>burned (deleted)</strong> from the digital circulation supply, keeping the ledger balanced with real cash reserves.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\LoginView.tsx
+====================================================
+
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { KeyRound, ShieldCheck, Mail } from 'lucide-react';
+import { createSupabaseBrowserClient } from '../lib/supabaseClient';
+
+/**
+ * LoginView - View layer for the admin login page.
+ * Uses real Supabase Auth (signInWithPassword).
+ * After signing in, verifies the user has role=''Admin'' in the users table.
+ */
+export default function LoginView() {
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+
+      // 1. Sign in with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (authError) {
+        setError('Invalid email or password. Please try again.');
+        return;
+      }
+
+      const userId = authData.user?.id;
+      if (!userId) {
+        setError('Sign-in succeeded but no user ID was returned. Please try again.');
+        return;
+      }
+
+      // 2. Verify the user has Admin role in our users table
+      const { data: userRow, error: roleError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (roleError || !userRow) {
+        await supabase.auth.signOut();
+        setError('Your account does not have access to this portal.');
+        return;
+      }
+
+      if (userRow.role !== 'Admin') {
+        await supabase.auth.signOut();
+        setError(`Access denied. This portal is for Admins only. Your role: ${userRow.role}`);
+        return;
+      }
+
+      // 3. All checks passed — redirect to dashboard
+      router.push('/dashboard');
+    } catch (err: unknown) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2"></div>
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md z-10">
+        <div className="flex justify-center">
+          <div className="h-16 w-16 bg-gradient-to-tr from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 transform hover:scale-105 transition-all">
+            <ShieldCheck className="h-9 w-9 text-white" />
+          </div>
+        </div>
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-white tracking-tight">
+          Transport Commission
+        </h2>
+        <p className="mt-2 text-center text-sm text-slate-400">
+          Admin Portal &amp; Central Treasury
+        </p>
+      </div>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md z-10">
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 py-8 px-4 shadow-2xl rounded-2xl sm:px-10">
+          <form className="space-y-6" onSubmit={handleLogin}>
+            {error && (
+              <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3 text-sm text-rose-400">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-slate-300">
+                Admin Email
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-slate-500" />
+                </div>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                  placeholder="admin@example.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-300">
+                Password
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <KeyRound className="h-5 w-5 text-slate-500" />
+                </div>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-0.5 active:translate-y-0 transition-all cursor-pointer"
+              >
+                {loading ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Signing in...
+                  </span>
+                ) : (
+                  'Sign In'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\MintingEngineView.tsx
+====================================================
+
+'use client';
+
+import { ShieldCheck, Landmark, PlusCircle, AlertTriangle } from 'lucide-react';
+
+interface MintingEngineProps {
+  amount: string;
+  setAmount: (amount: string) => void;
+  reference: string;
+  setReference: (ref: string) => void;
+  isSubmitting: boolean;
+  successMessage: string | null;
+  errorMessage: string | null;
+  onSubmit: (e: React.FormEvent) => void;
+}
+
+/**
+ * MintingEngineView - Presentation layer for Treasury Minting.
+ * Form to input fiat bank references and mint digital tokens.
+ */
+export default function MintingEngineView({
+  amount,
+  setAmount,
+  reference,
+  setReference,
+  isSubmitting,
+  successMessage,
+  errorMessage,
+  onSubmit,
+}: MintingEngineProps) {
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Minting Engine (Treasury Management)</h1>
+        <p className="text-slate-400 text-sm mt-0.5">Convert fiat currency deposits into digital transit tokens</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Minting Form */}
+        <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <PlusCircle className="h-5 w-5 text-indigo-400" />
+            Mint New Digital Tokens
+          </h2>
+
+          <form onSubmit={onSubmit} className="space-y-5">
+            {successMessage && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-emerald-400 text-sm">
+                {successMessage}
+              </div>
+            )}
+
+            {errorMessage && (
+              <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
+                {errorMessage}
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="ref" className="block text-sm font-medium text-slate-350">
+                Fiat Deposit Reference
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Landmark className="h-5 w-5 text-slate-500" />
+                </div>
+                <input
+                  type="text"
+                  id="ref"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  placeholder="e.g. UBA-DEP-2026-90412"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <p className="mt-1 text-slate-500 text-[11px]">
+                Optional for testing. In production, this must match the transaction reference from the bank.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="mint-amount" className="block text-sm font-medium text-slate-350">
+                Amount (₦)
+              </label>
+              <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <span className="text-slate-500 sm:text-sm font-medium">₦</span>
+                </div>
+                <input
+                  type="number"
+                  id="mint-amount"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="block w-full pl-8 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  placeholder="500,000"
+                  disabled={isSubmitting}
+                  min="1"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99] transition-all"
+              >
+                {isSubmitting ? 'Minting in progress...' : 'Mint Tokens'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Security / Info Side Panel */}
+        <div className="space-y-6">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
+            <h3 className="text-md font-semibold text-white mb-3 flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-indigo-400" />
+              Security Protocol
+            </h3>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              Minting digital tokens is equivalent to printing legal currency within the campus transit network.
+            </p>
+            <ul className="text-slate-500 text-[11px] list-disc pl-4 mt-3 space-y-2">
+              <li>Every minting operation creates a hard audit trail in the ledger.</li>
+              <li>Always verify physical bank deposit clearance before performing a minting action.</li>
+              <li>Minted tokens are directly deposited into the Central Treasury Wallet.</li>
+            </ul>
+          </div>
+
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 shadow-xl">
+            <h3 className="text-md font-semibold text-amber-400 mb-2 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Double-Entry Rule
+            </h3>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              The system automatically inserts a transaction record with `sender_wallet_id = null` and `type = MINT`. The ledger balance of the Central Treasury Wallet is atomically increased.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\ResetPasswordView.tsx
+====================================================
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import { createSupabaseBrowserClient } from '../lib/supabaseClient';
+import { Lock, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+
+export default function ResetPasswordView() {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [hasValidSession, setHasValidSession] = useState(false);
+
+  const supabase = createSupabaseBrowserClient();
+
+  useEffect(() => {
+    // When this page loads via the email link, Supabase automatically parses the
+    // #access_token or ?code from the URL and establishes a session.
+    // We just need to wait a brief moment to confirm the session exists.
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setHasValidSession(true);
+        } else {
+          // Sometimes it takes a split second for the auth listener to pick it up from the URL
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+            if (newSession) {
+              setHasValidSession(true);
+            }
+          });
+          
+          // If after 2 seconds we still have no session, the link is likely invalid or expired.
+          setTimeout(() => {
+            if (!hasValidSession) setIsCheckingSession(false);
+          }, 2000);
+          
+          return () => subscription.unsubscribe();
+        }
+      } catch (err) {
+        console.error('Session check failed', err);
+      } finally {
+        setIsCheckingSession(false);
+      }
+    };
+
+    checkSession();
+  }, [supabase.auth, hasValidSession]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: password
+      });
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setSuccess(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred updating your password.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+        <div className="flex flex-col items-center gap-4">
+          <svg className="animate-spin h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-slate-400 text-sm font-medium animate-pulse">Verifying secure link...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasValidSession && !success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+        <div className="w-full max-w-md bg-slate-900/60 border border-rose-500/30 rounded-2xl p-8 shadow-xl backdrop-blur-xl text-center">
+          <AlertCircle className="h-12 w-12 text-rose-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Invalid or Expired Link</h2>
+          <p className="text-slate-400 text-sm mb-6">
+            This password reset link is no longer valid. Please return to the QR Fare mobile app and request a new one.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans relative overflow-hidden">
+      {/* Background glowing orbs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-violet-500/20 rounded-full blur-[120px] pointer-events-none" />
+
+      <div className="w-full max-w-md relative z-10">
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
+          
+          <div className="mb-8 text-center">
+            <div className="mx-auto w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center mb-4">
+              <Lock className="h-8 w-8 text-indigo-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Set New Password</h1>
+            <p className="text-slate-400 text-sm mt-2">
+              Create a strong new password for your QR Fare account.
+            </p>
+          </div>
+
+          {success ? (
+            <div className="text-center py-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+              </div>
+              <h2 className="text-xl font-bold text-white mb-2">Password Updated!</h2>
+              <p className="text-slate-400 text-sm mb-8">
+                Your password has been changed successfully. You can now close this window and return to the QR Fare app to log in.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {error && (
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-rose-400 text-sm flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p>{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full pl-4 pr-10 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5">Confirm Password</label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full mt-2 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-sm font-bold transition-all hover:shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex justify-center items-center h-[52px]"
+              >
+                {isSubmitting ? (
+                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  'Save New Password'
+                )}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\StaffRegistrationView.tsx
+====================================================
+
+'use client';
+
+import { useState, useRef } from 'react';
+import QRCode from 'react-qr-code';
+import {
+  UserCog, UserPlus, Users, QrCode, Download,
+  CheckCircle2, AlertCircle, X, ShieldCheck, Bus,
+} from 'lucide-react';
+import { useStaffViewModel } from '../viewmodels/useStaffViewModel';
+import { User } from '../models/types';
+
+/**
+ * StaffRegistrationView — Admin registers Agents and Drivers.
+ * On success, shows a QR code the staff member scans in the Flutter app
+ * to auto-create their account.
+ */
+export default function StaffRegistrationView() {
+  const vm = useStaffViewModel();
+  const qrRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadQr = () => {
+    const svg = qrRef.current?.querySelector('svg');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([svgData], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${vm.createdStaff?.staffCode ?? 'staff'}-qr.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // QR code payload — scanned by the Flutter app
+  const qrPayload = vm.createdStaff
+    ? JSON.stringify({
+        e: vm.createdStaff.email,
+        p: vm.createdStaff.tempPassword,
+        r: vm.createdStaff.role,
+        c: vm.createdStaff.staffCode,
+      })
+    : '';
+
+  const agents = vm.staffList.filter((s) => s.role === 'Agent');
+  const drivers = vm.staffList.filter((s) => s.role === 'Driver');
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Staff Registry</h1>
+        <p className="text-slate-400 text-sm mt-0.5">
+          Register new Agents and Drivers — generate a QR code for mobile app sign-in
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* ── Registration Form (left) ── */}
+        <div className="lg:col-span-2">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur-xl">
+            <h2 className="text-base font-semibold text-white flex items-center gap-2 mb-5">
+              <UserPlus className="h-4.5 w-4.5 text-indigo-400" />
+              Register New Staff Member
+            </h2>
+
+            <form onSubmit={vm.registerStaff} className="space-y-4">
+              {vm.error && (
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-rose-400 text-sm flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  {vm.error}
+                </div>
+              )}
+
+              {/* Full Name */}
+              <div>
+                <label htmlFor="staff-name" className="block text-xs font-semibold text-slate-400 mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  id="staff-name"
+                  type="text"
+                  value={vm.name}
+                  onChange={(e) => vm.setName(e.target.value)}
+                  placeholder="e.g. John Babatunde"
+                  required
+                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                />
+              </div>
+
+              {/* Email Address */}
+              <div>
+                <label htmlFor="staff-email" className="block text-xs font-semibold text-slate-400 mb-1.5">
+                  Email Address
+                </label>
+                <input
+                  id="staff-email"
+                  type="email"
+                  value={vm.email}
+                  onChange={(e) => vm.setEmail(e.target.value)}
+                  placeholder="e.g. john@example.com"
+                  required
+                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                />
+              </div>
+
+              {/* Role Toggle */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Role</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['Agent', 'Driver'] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => vm.setRole(r)}
+                      className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all cursor-pointer ${
+                        vm.role === r
+                          ? r === 'Agent'
+                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
+                            : 'bg-violet-600 border-violet-500 text-white shadow-lg shadow-violet-500/20'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                      }`}
+                    >
+                      {r === 'Agent' ? <ShieldCheck className="h-4 w-4" /> : <Bus className="h-4 w-4" />}
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  {vm.role === 'Agent'
+                    ? 'Code will be: AGT-001, AGT-002, …'
+                    : 'Code will be: DRV-001, DRV-002, …'}
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={vm.isSubmitting}
+                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-sm font-bold transition-all hover:shadow-lg hover:shadow-indigo-500/20 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {vm.isSubmitting ? 'Creating account…' : 'Register & Generate QR'}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* ── QR Code Panel (right) ── */}
+        <div className="lg:col-span-3">
+          {vm.createdStaff ? (
+            <div className="bg-slate-900/60 border border-emerald-500/30 rounded-2xl p-6 shadow-xl backdrop-blur-xl relative">
+              <button
+                onClick={vm.dismissQr}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="flex items-center gap-2 mb-5">
+                <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                <h2 className="text-base font-semibold text-white">
+                  {vm.createdStaff.name} registered successfully
+                </h2>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-6 items-center">
+                {/* QR Code */}
+                <div ref={qrRef} className="bg-white p-4 rounded-2xl shadow-2xl shrink-0">
+                  <QRCode
+                    value={qrPayload}
+                    size={180}
+                    level="M"
+                    style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
+                  />
+                </div>
+
+                {/* Details */}
+                <div className="space-y-3 flex-1">
+                  <div className="space-y-2">
+                    <DetailRow label="Staff Code" value={vm.createdStaff.staffCode} mono highlight />
+                    <DetailRow label="Role" value={vm.createdStaff.role} />
+                    <DetailRow label="Internal Email" value={vm.createdStaff.email} mono />
+                    <DetailRow label="Temp Password" value={vm.createdStaff.tempPassword} mono />
+                  </div>
+
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-[11px] text-amber-400">
+                    <strong>Instructions:</strong> Show this QR code to {vm.createdStaff.name}.
+                    They scan it in the Flutter app → automatic sign-in → they set their own password.
+                    The QR disappears when you close this panel.
+                  </div>
+
+                  <button
+                    onClick={handleDownloadQr}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download QR as SVG
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 flex flex-col items-center justify-center text-center h-full min-h-[280px]">
+              <QrCode className="h-12 w-12 text-slate-700 mb-3" />
+              <p className="text-slate-500 text-sm font-medium">QR code appears here</p>
+              <p className="text-slate-600 text-xs mt-1">
+                Register a staff member on the left to generate their onboarding QR code
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Staff Table ── */}
+      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl backdrop-blur-xl">
+        <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <Users className="h-4.5 w-4.5 text-indigo-400" />
+            Registered Staff
+          </h2>
+          <div className="flex items-center gap-3">
+            <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full text-xs font-semibold">
+              {agents.length} Agent{agents.length !== 1 ? 's' : ''}
+            </span>
+            <span className="px-2.5 py-1 bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-full text-xs font-semibold">
+              {drivers.length} Driver{drivers.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+
+        {vm.isLoading ? (
+          <div className="py-12 flex justify-center">
+            <svg className="animate-spin h-7 w-7 text-indigo-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+        ) : vm.staffList.length === 0 ? (
+          <div className="py-12 text-center">
+            <UserCog className="h-10 w-10 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">No staff registered yet</p>
+            <p className="text-slate-600 text-xs mt-1">Register your first Agent or Driver above</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
+                  <th className="py-3.5 px-5">Name</th>
+                  <th className="py-3.5 px-5">Role</th>
+                  <th className="py-3.5 px-5">User ID</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {vm.staffList.map((s) => (
+                  <StaffRow key={s.id} staff={s} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({
+  label, value, mono = false, highlight = false,
+}: {
+  label: string; value: string; mono?: boolean; highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs text-slate-500 shrink-0">{label}</span>
+      <span className={`text-xs text-right break-all ${mono ? 'font-mono' : ''} ${highlight ? 'text-emerald-400 font-bold text-sm' : 'text-slate-300'}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function StaffRow({ staff }: { staff: User }) {
+  const isAgent = staff.role === 'Agent';
+  return (
+    <tr className="hover:bg-slate-800/20 transition-colors">
+      <td className="py-3.5 px-5 font-medium text-white flex items-center gap-3">
+        <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs border ${
+          isAgent
+            ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+            : 'bg-violet-500/10 border-violet-500/20 text-violet-400'
+        }`}>
+          {staff.name.substring(0, 2).toUpperCase()}
+        </div>
+        {staff.name}
+      </td>
+      <td className="py-3.5 px-5">
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+          isAgent
+            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+            : 'bg-violet-500/10 text-violet-400 border-violet-500/20'
+        }`}>
+          {isAgent ? <ShieldCheck className="h-3 w-3" /> : <Bus className="h-3 w-3" />}
+          {staff.role}
+        </span>
+      </td>
+      <td className="py-3.5 px-5 font-mono text-xs text-slate-500">
+        …{staff.id.slice(-12)}
+      </td>
+    </tr>
+  );
+}
+
+
+
+
+====================================================
+FILE: src\views\TransactionHistoryView.tsx
+====================================================
+
+'use client';
+
+import { ScrollText, RefreshCw, ArrowUpRight, ArrowDownLeft, Flame, Coins, Filter, ArrowRightLeft } from 'lucide-react';
+import { Transaction } from '../models/types';
+import { TxFilter } from '../viewmodels/useTransactionHistoryViewModel';
+
+interface TransactionHistoryProps {
+  transactions: Transaction[];
+  totalCount: number;
+  filter: TxFilter;
+  setFilter: (f: TxFilter) => void;
+  isLoading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}
+
+const TYPE_CONFIG: Record<
+  string,
+  { label: string; color: string; bg: string; border: string; Icon: React.ElementType }
+> = {
+  MINT:      { label: 'MINT',      color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', Icon: Coins },
+  WHOLESALE: { label: 'WHOLESALE', color: 'text-indigo-400',  bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20',  Icon: ArrowDownLeft },
+  RETAIL:    { label: 'RETAIL',    color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   Icon: ArrowRightLeft },
+  FARE:      { label: 'FARE',      color: 'text-violet-400',  bg: 'bg-violet-500/10',  border: 'border-violet-500/20',  Icon: ArrowUpRight },
+  BURN:      { label: 'BURN',      color: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/20',    Icon: Flame },
+};
+
+const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string }> = {
+  SUCCESS: { color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+  PENDING: { color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20'   },
+  FAILED:  { color: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/20'     },
+};
+
+const FILTERS: TxFilter[] = ['ALL', 'MINT', 'WHOLESALE', 'RETAIL', 'FARE', 'BURN'];
+
+function shortId(id: string | null | undefined): string {
+  if (!id) return '—';
+  // If it looks like a UUID, shorten it; otherwise show as-is truncated
+  if (id.includes('-') && id.length > 12) return `…${id.slice(-8)}`;
+  return id.length > 14 ? `${id.slice(0, 14)}…` : id;
+}
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * TransactionHistoryView — full ledger of all Supabase transactions.
+ * Colour-coded by type with filter tabs and refresh.
+ */
+export default function TransactionHistoryView({
+  transactions,
+  totalCount,
+  filter,
+  setFilter,
+  isLoading,
+  error,
+  onRefresh,
+}: TransactionHistoryProps) {
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Transaction History</h1>
+          <p className="text-slate-400 text-sm mt-0.5">
+            Complete ledger of all token movements — {totalCount} total records
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-lg text-sm text-slate-300 font-medium transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          {isLoading ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+
+      {/* Filter Pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Filter className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+        {FILTERS.map((f) => {
+          const cfg = f !== 'ALL' ? TYPE_CONFIG[f] : null;
+          const isActive = filter === f;
+          return (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                isActive
+                  ? cfg
+                    ? `${cfg.bg} ${cfg.color} ${cfg.border}`
+                    : 'bg-slate-700 text-white border-slate-600'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+              }`}
+            >
+              {f}
+            </button>
+          );
+        })}
+      </div>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Table Card */}
+      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl backdrop-blur-xl">
+        <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <ScrollText className="h-4.5 w-4.5 text-indigo-400" />
+            Ledger Entries
+          </h2>
+          <span className="px-2.5 py-1 bg-slate-850 rounded-full text-xs font-semibold text-slate-400 border border-slate-800">
+            {transactions.length} {filter !== 'ALL' ? filter : ''} record{transactions.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {isLoading ? (
+          <div className="py-16 flex justify-center">
+            <svg className="animate-spin h-8 w-8 text-indigo-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+        ) : transactions.length === 0 ? (
+          <div className="py-16 text-center">
+            <ScrollText className="h-10 w-10 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm font-medium">No transactions yet</p>
+            <p className="text-slate-600 text-xs mt-1">
+              {filter !== 'ALL' ? `No ${filter} transactions found.` : 'Mint tokens to get started.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
+                  <th className="py-3.5 px-5">Type</th>
+                  <th className="py-3.5 px-5">Amount</th>
+                  <th className="py-3.5 px-5">From Wallet</th>
+                  <th className="py-3.5 px-5">To Wallet</th>
+                  <th className="py-3.5 px-5">Reference</th>
+                  <th className="py-3.5 px-5">Status</th>
+                  <th className="py-3.5 px-5">Date &amp; Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {transactions.map((tx) => {
+                  const typeCfg = TYPE_CONFIG[tx.type] ?? TYPE_CONFIG.MINT;
+                  const statusCfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.SUCCESS;
+                  const TypeIcon = typeCfg.Icon;
+                  return (
+                    <tr key={tx.id} className="hover:bg-slate-800/20 transition-colors group">
+                      {/* Type */}
+                      <td className="py-3.5 px-5">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${typeCfg.bg} ${typeCfg.color} ${typeCfg.border}`}>
+                          <TypeIcon className="h-3 w-3" />
+                          {typeCfg.label}
+                        </span>
+                      </td>
+                      {/* Amount */}
+                      <td className="py-3.5 px-5 font-bold text-white text-sm">
+                        ₦{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      {/* From */}
+                      <td className="py-3.5 px-5 font-mono text-xs text-slate-400 group-hover:text-slate-300 transition-colors" title={tx.senderWalletId ?? 'N/A'}>
+                        {tx.senderWalletId ? shortId(tx.senderWalletId) : <span className="text-slate-600 italic">System</span>}
+                      </td>
+                      {/* To */}
+                      <td className="py-3.5 px-5 font-mono text-xs text-slate-400 group-hover:text-slate-300 transition-colors" title={tx.receiverWalletId ?? 'N/A'}>
+                        {tx.receiverWalletId ? shortId(tx.receiverWalletId) : <span className="text-slate-600 italic">Burned</span>}
+                      </td>
+                      {/* Reference */}
+                      <td className="py-3.5 px-5 text-xs text-slate-500">
+                        {tx.reference ?? <span className="italic">—</span>}
+                      </td>
+                      {/* Status */}
+                      <td className="py-3.5 px-5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusCfg.bg} ${statusCfg.color} ${statusCfg.border}`}>
+                          {tx.status}
+                        </span>
+                      </td>
+                      {/* Date */}
+                      <td className="py-3.5 px-5 text-xs text-slate-500 whitespace-nowrap">
+                        {formatDate(tx.timestamp)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+====================================================
+FILE: tsconfig.json
+====================================================
+
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
+
+
+
+

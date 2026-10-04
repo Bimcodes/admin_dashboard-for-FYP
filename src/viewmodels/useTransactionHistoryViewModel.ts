@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { transactionRepository } from '../models';
 import { Transaction } from '../models/types';
 
-export type TxFilter = 'ALL' | 'MINT' | 'WHOLESALE' | 'FARE' | 'BURN';
+export type TxFilter = 'ALL' | 'MINT' | 'WHOLESALE' | 'RETAIL' | 'FARE' | 'BURN';
 
 /**
  * ViewModel for the Transaction History tab.

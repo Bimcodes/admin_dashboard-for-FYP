@@ -37,7 +37,7 @@ export interface Transaction {
 
 export interface Bus {
   id: string; // e.g. "BUS-001"
-  driverName: string;
+  driverName: string | null; // Used as an optional bus label/plate number now
   driverId: string | null;      // UUID FK to users table (nullable)
   passengerCount: number;
   tokensCollected: number;

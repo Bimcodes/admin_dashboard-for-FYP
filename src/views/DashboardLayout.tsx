@@ -13,6 +13,7 @@ import {
   ScrollText,
   UserCog,
   ClipboardList,
+  QrCode,
 } from 'lucide-react';
 import { createSupabaseBrowserClient } from '../lib/supabaseClient';
 
@@ -23,6 +24,7 @@ import FleetMonitoringView from './FleetMonitoringView';
 import TransactionHistoryView from './TransactionHistoryView';
 import StaffRegistrationView from './StaffRegistrationView';
 import DriverRegisterView from './DriverRegisterView';
+import BusQrCodesView from './BusQrCodesView';
 
 import { useFinancialOverviewViewModel } from '../viewmodels/useFinancialOverviewViewModel';
 import { useMintingViewModel } from '../viewmodels/useMintingViewModel';
@@ -31,7 +33,7 @@ import { useFleetViewModel } from '../viewmodels/useFleetViewModel';
 import { useTransactionHistoryViewModel } from '../viewmodels/useTransactionHistoryViewModel';
 import { useDriverRegisterViewModel } from '../viewmodels/useDriverRegisterViewModel';
 
-type Tab = 'overview' | 'mint' | 'agents' | 'fleet' | 'history' | 'staff' | 'register';
+type Tab = 'overview' | 'mint' | 'agents' | 'fleet' | 'history' | 'staff' | 'register' | 'qrcodes';
 
 /**
  * DashboardLayout - The main protected dashboard container.
@@ -87,6 +89,7 @@ export default function DashboardLayout() {
           <FinancialOverviewView
             totalMinted={overviewVM.totalMinted}
             totalCirculation={overviewVM.totalCirculation}
+            totalBurned={overviewVM.totalBurned}
             treasuryBalance={overviewVM.treasuryBalance}
             isLoading={overviewVM.isLoading}
             error={overviewVM.error}
@@ -124,7 +127,6 @@ export default function DashboardLayout() {
             setModalErrorMessage={agentVM.setModalErrorMessage}
             onTransferSubmit={agentVM.wholesaleTransfer}
             onRefresh={agentVM.refresh}
-            onInitPaystack={agentVM.initPaystackPayment}
           />
         );
       case 'fleet':
@@ -135,7 +137,6 @@ export default function DashboardLayout() {
             error={fleetVM.error}
             isReconcilingId={fleetVM.isReconcilingId}
             onReconcile={fleetVM.reconcileBus}
-            onSimulateRides={fleetVM.simulateRides}
             onAddBus={fleetVM.addBus}
           />
         );
@@ -162,6 +163,8 @@ export default function DashboardLayout() {
             onRefresh={registerVM.refresh}
           />
         );
+      case 'qrcodes':
+        return <BusQrCodesView />;
       default:
         return null;
     }
@@ -172,6 +175,7 @@ export default function DashboardLayout() {
     { id: 'mint'      as Tab, label: 'Minting Engine',      icon: Coins },
     { id: 'agents'    as Tab, label: 'Agent Management',    icon: Users },
     { id: 'fleet'     as Tab, label: 'Fleet Monitoring',    icon: Bus },
+    { id: 'qrcodes'   as Tab, label: 'Bus QR Codes',        icon: QrCode },
     { id: 'history'   as Tab, label: 'Transaction History', icon: ScrollText },
     { id: 'staff'     as Tab, label: 'Staff Registry',      icon: UserCog },
     { id: 'register'  as Tab, label: 'Driver Register',     icon: ClipboardList },

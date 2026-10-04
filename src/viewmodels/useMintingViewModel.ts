@@ -26,11 +26,8 @@ export const useMintingViewModel = (onMintSuccess?: () => void) => {
         return;
       }
 
-      if (!reference.trim()) {
-        setErrorMessage('Please enter a bank deposit reference.');
-        setIsSubmitting(false);
-        return;
-      }
+      // Reference is optional to speed up demonstrations
+      const finalReference = reference.trim() || undefined;
 
       try {
         // 1. Fetch Treasury wallet
@@ -39,16 +36,13 @@ export const useMintingViewModel = (onMintSuccess?: () => void) => {
           throw new Error('Treasury Wallet not found. Please initialize the database.');
         }
 
-        // 2. Update Treasury wallet balance (Double-Entry: Add to Treasury)
-        await walletRepository.updateBalance(treasuryWallet.id, parsedAmount);
-
-        // 3. Create the Transaction record
-        await transactionRepository.createTransaction(
+        // 2. Perform atomic token transfer (MINT)
+        await transactionRepository.transfer(
           'MINT',
           null, // Sender is null for minting
           treasuryWallet.id,
           parsedAmount,
-          reference
+          finalReference
         );
 
         setSuccessMessage(`Successfully minted ₦${parsedAmount.toLocaleString()} tokens to the Central Treasury Wallet.`);

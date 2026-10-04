@@ -10,8 +10,7 @@ interface FleetMonitoringProps {
   error: string | null;
   isReconcilingId: string | null;
   onReconcile: (id: string) => void;
-  onSimulateRides: (id: string) => void;
-  onAddBus: (driverName: string) => void;
+  onAddBus: (busLabel?: string) => void;
 }
 
 /**
@@ -24,16 +23,14 @@ export default function FleetMonitoringView({
   error,
   isReconcilingId,
   onReconcile,
-  onSimulateRides,
   onAddBus,
 }: FleetMonitoringProps) {
-  const [newDriverName, setNewDriverName] = useState('');
+  const [newBusLabel, setNewBusLabel] = useState('');
 
   const handleAddBusSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDriverName.trim()) return;
-    onAddBus(newDriverName);
-    setNewDriverName('');
+    onAddBus(newBusLabel);
+    setNewBusLabel('');
   };
 
   return (
@@ -48,16 +45,16 @@ export default function FleetMonitoringView({
         <form onSubmit={handleAddBusSubmit} className="flex gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 max-w-sm w-full sm:w-auto">
           <input
             type="text"
-            value={newDriverName}
-            onChange={(e) => setNewDriverName(e.target.value)}
-            placeholder="Driver's Full Name"
+            value={newBusLabel}
+            onChange={(e) => setNewBusLabel(e.target.value)}
+            placeholder="Bus Label (Optional)"
             className="bg-transparent border-none text-xs text-white placeholder-slate-500 pl-3 focus:outline-none focus:ring-0 w-full sm:w-44"
           />
           <button
             type="submit"
             className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
           >
-            <UserPlus className="h-3.5 w-3.5" />
+            <Bus className="h-3.5 w-3.5" />
             Add Bus
           </button>
         </form>
@@ -94,7 +91,7 @@ export default function FleetMonitoringView({
               <thead>
                 <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
                   <th className="py-4 px-6">Bus ID</th>
-                  <th className="py-4 px-6">Driver Name</th>
+                  <th className="py-4 px-6">Label / Plate</th>
                   <th className="py-4 px-6">Riders (Today)</th>
                   <th className="py-4 px-6">Fares Collected</th>
                   <th className="py-4 px-6">Ledger Status</th>
@@ -105,7 +102,7 @@ export default function FleetMonitoringView({
                 {buses.map((bus) => (
                   <tr key={bus.id} className="hover:bg-slate-850/30 transition-colors">
                     <td className="py-4 px-6 font-mono text-xs font-bold text-indigo-400">{bus.id}</td>
-                    <td className="py-4 px-6 font-medium text-white">{bus.driverName}</td>
+                    <td className="py-4 px-6 font-medium text-white">{bus.driverName || '—'}</td>
                     <td className="py-4 px-6">{bus.passengerCount} passengers</td>
                     <td className="py-4 px-6 font-semibold text-white">₦{bus.tokensCollected.toLocaleString()}</td>
                     <td className="py-4 px-6">
@@ -122,14 +119,6 @@ export default function FleetMonitoringView({
                     <td className="py-4 px-6 text-right space-x-2">
                       {!bus.isReconciled && (
                         <>
-                          <button
-                            onClick={() => onSimulateRides(bus.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                            title="Simulate 5 passenger rides (adds +₦500 to uncleared fares)"
-                          >
-                            <Play className="h-3.5 w-3.5 text-indigo-400" />
-                            Simulate Rides
-                          </button>
                           <button
                             onClick={() => onReconcile(bus.id)}
                             disabled={isReconcilingId === bus.id}

@@ -233,6 +233,20 @@ export class MockTransactionRepository implements ITransactionRepository {
     dbStore.getState().addTransaction(newTx);
     return newTx;
   }
+
+  async transfer(
+    type: Transaction['type'],
+    sender: string | null,
+    receiver: string | null,
+    amount: number,
+    reference?: string
+  ): Promise<string> {
+    const tx = await this.createTransaction(type, sender, receiver, amount, reference, 'SUCCESS');
+    // In mock, we would manually debit/credit, but let's just do a rough hack or assume tests don't use this heavily for logic since it's just a mock
+    if (sender) dbStore.getState().updateWalletBalance(sender, (await dbStore.getState().wallets.find(w => w.id === sender)!.balance) - amount);
+    if (receiver) dbStore.getState().updateWalletBalance(receiver, (await dbStore.getState().wallets.find(w => w.id === receiver)!.balance) + amount);
+    return tx.id;
+  }
 }
 
 export class MockFleetRepository implements IFleetRepository {
@@ -244,15 +258,15 @@ export class MockFleetRepository implements IFleetRepository {
     const bus = dbStore.getState().buses.find((b) => b.id === busId);
     if (!bus) throw new Error('Bus not found');
 
-    const updatedBus = { ...bus, isReconciled: true };
+    const updatedBus = { ...bus, isReconciled: true, passengerCount: 0, tokensCollected: 0 };
     dbStore.getState().updateBus(updatedBus);
     return updatedBus;
   }
 
-  async addBus(driverName: string): Promise<Bus> {
+  async addBus(busLabel?: string): Promise<Bus> {
     const newBus: Bus = {
       id: `BUS-${Math.floor(100 + Math.random() * 900)}`,
-      driverName,
+      driverName: busLabel || null,
       driverId: null,
       passengerCount: 0,
       tokensCollected: 0,
@@ -264,19 +278,6 @@ export class MockFleetRepository implements IFleetRepository {
       buses: [...state.buses, newBus],
     }));
     return newBus;
-  }
-
-  async simulatePassengerRides(busId: string, count: number, fareAmount: number): Promise<Bus> {
-    const bus = dbStore.getState().buses.find((b) => b.id === busId);
-    if (!bus) throw new Error('Bus not found');
-
-    const updatedBus = {
-      ...bus,
-      passengerCount: bus.passengerCount + count,
-      tokensCollected: bus.tokensCollected + (count * fareAmount),
-    };
-    dbStore.getState().updateBus(updatedBus);
-    return updatedBus;
   }
 
   async getDriverDailyRegister(): Promise<import('./types').DriverDailyRecord[]> {

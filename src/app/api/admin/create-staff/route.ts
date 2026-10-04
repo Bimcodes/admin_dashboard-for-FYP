@@ -19,19 +19,25 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '../../../../lib/supabaseAdmin';
+import { requireAdmin } from '../../../../lib/requireAdmin';
+import { randomInt } from 'crypto';
 
 /** Generates a cryptographically random password */
 function generateTempPassword(length = 16): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!';
   let result = '';
-  // Use Math.random fallback since crypto.getRandomValues works in Node edge runtime
   for (let i = 0; i < length; i++) {
-    result += chars[Math.floor(Math.random() * chars.length)];
+    result += chars[randomInt(chars.length)];
   }
   return result;
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
   try {
     const body = await request.json();
     const { name, role, email } = body as { name: string; role: 'Agent' | 'Driver'; email: string };
@@ -100,8 +106,9 @@ export async function POST(request: NextRequest) {
       .insert({ owner_id: userId, wallet_type: walletType, balance: 0 });
 
     if (walletError) {
-      // Non-fatal — log but don't rollback the user
-      console.error('[create-staff] Wallet creation failed:', walletError.message);
+      await adminClient.from('users').delete().eq('id', userId);
+      await adminClient.auth.admin.deleteUser(userId);
+      throw new Error(`Wallet creation failed: ${walletError.message}`);
     }
 
     // ── 5. Return credentials for QR generation ───────────────────────────────

@@ -21,7 +21,6 @@ interface AgentManagementProps {
   setModalErrorMessage: (msg: string | null) => void;
   onTransferSubmit: (e: React.FormEvent) => void;
   onRefresh: () => void;
-  onInitPaystack: (agentId: string, amountInKobo: number) => Promise<{ authorizationUrl: string } | null>;
 }
 
 /**
@@ -44,42 +43,8 @@ export default function AgentManagementView({
   setModalErrorMessage,
   onTransferSubmit,
   onRefresh,
-  onInitPaystack,
 }: AgentManagementProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isPaystackModalOpen, setIsPaystackModalOpen] = useState(false);
-  const [paystackAgentId, setPaystackAgentId] = useState('');
-  const [paystackAmount, setPaystackAmount] = useState('');
-  const [paystackLoading, setPaystackLoading] = useState(false);
-  const [paystackError, setPaystackError] = useState<string | null>(null);
-  const [paystackUrl, setPaystackUrl] = useState<string | null>(null);
-
-  const openPaystackModal = (agent: AgentListItem) => {
-    setPaystackAgentId(agent.id);
-    setPaystackAmount('');
-    setPaystackError(null);
-    setPaystackUrl(null);
-    setIsPaystackModalOpen(true);
-  };
-
-  const handlePaystackSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amount = parseFloat(paystackAmount);
-    if (!amount || amount < 100) {
-      setPaystackError('Minimum top-up amount is ₦100.');
-      return;
-    }
-    setPaystackLoading(true);
-    setPaystackError(null);
-    const result = await onInitPaystack(paystackAgentId, Math.round(amount * 100));
-    if (result?.authorizationUrl) {
-      setPaystackUrl(result.authorizationUrl);
-    } else {
-      setPaystackError('Failed to generate Paystack link. Check your Paystack key.');
-    }
-    setPaystackLoading(false);
-  };
-
   const openTransferModal = (agent: AgentListItem) => {
     setSelectedAgentId(agent.id);
     setSuccessMessage(null);
@@ -160,13 +125,6 @@ export default function AgentManagementView({
                         >
                           <Send className="h-3 w-3" />
                           Wholesale
-                        </button>
-                        <button
-                          onClick={() => openPaystackModal(agent)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer shadow-md hover:shadow-emerald-500/15"
-                        >
-                          <CreditCard className="h-3 w-3" />
-                          Top Up
                         </button>
                       </div>
                     </td>
@@ -266,116 +224,6 @@ export default function AgentManagementView({
                   </button>
                 )}
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Paystack Top-Up Modal */}
-      {isPaystackModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden relative animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/30">
-              <h3 className="text-md font-bold text-white flex items-center gap-2">
-                <CreditCard className="h-4.5 w-4.5 text-emerald-400" />
-                Paystack Top-Up
-              </h3>
-              <button
-                onClick={() => setIsPaystackModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handlePaystackSubmit} className="p-6 space-y-4">
-              {paystackError && (
-                <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-rose-400 text-sm flex gap-2">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  {paystackError}
-                </div>
-              )}
-
-              {paystackUrl ? (
-                <div className="space-y-4 text-center py-4">
-                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-emerald-400 text-sm">
-                    Payment link generated successfully.
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl shadow-xl inline-block mx-auto mb-4">
-                    <QRCode
-                      value={JSON.stringify({
-                        action: 'topup',
-                        url: paystackUrl,
-                      })}
-                      size={180}
-                      level="M"
-                      style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
-                    />
-                  </div>
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-[12px] text-amber-400 font-medium">
-                    Ask the agent to scan this code from their app to complete the payment on their device.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsPaystackModalOpen(false);
-                      onRefresh();
-                    }}
-                    className="w-full py-2 border border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-white rounded-lg text-sm font-semibold transition-all"
-                  >
-                    Close after payment
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-400">Recipient Agent</label>
-                    <div className="bg-slate-950 border border-slate-850 rounded-lg p-3 text-sm text-slate-200 font-medium flex items-center gap-2">
-                      <div className="h-5 w-5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] flex items-center justify-center font-bold">AG</div>
-                      {agents.find((a) => a.id === paystackAgentId)?.name || 'Select Agent'}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="paystackAmount" className="block text-xs font-semibold text-slate-400 mb-1">
-                      Top-Up Amount (₦)
-                    </label>
-                    <div className="relative rounded-md shadow-sm">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-slate-500 text-sm">₦</span>
-                      </div>
-                      <input
-                        type="number"
-                        id="paystackAmount"
-                        value={paystackAmount}
-                        onChange={(e) => setPaystackAmount(e.target.value)}
-                        className="block w-full pl-8 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:emerald-500 sm:text-sm"
-                        placeholder="e.g. 5,000"
-                        disabled={paystackLoading}
-                        min="100"
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">Minimum ₦100. This will redirect to Paystack.</p>
-                  </div>
-
-                  <div className="pt-2 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsPaystackModalOpen(false)}
-                      className="flex-1 py-2 border border-slate-800 text-slate-350 hover:bg-slate-850 hover:text-white rounded-lg text-sm font-semibold transition-all cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={paystackLoading}
-                      className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      {paystackLoading ? 'Generating...' : 'Pay via Paystack'}
-                    </button>
-                  </div>
-                </>
-              )}
             </form>
           </div>
         </div>

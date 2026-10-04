@@ -30,21 +30,19 @@ export interface ITransactionRepository {
     reference?: string,
     status?: Transaction['status']
   ): Promise<Transaction>;
+  transfer(
+    type: Transaction['type'],
+    sender: string | null,
+    receiver: string | null,
+    amount: number,
+    reference?: string
+  ): Promise<string>;
 }
 
 export interface IFleetRepository {
   getBuses(): Promise<Bus[]>;
   markBusAsReconciled(busId: string): Promise<Bus>;
-  addBus(driverName: string): Promise<Bus>;
-  simulatePassengerRides(busId: string, count: number, fareAmount: number): Promise<Bus>;
+  addBus(busLabel?: string): Promise<Bus>;
   getDriverDailyRegister(): Promise<DriverDailyRecord[]>;
-}
-
-export interface IPaymentService {
-  processPaystackPayment(
-    amountInKobo: number,
-    reference: string,
-    agentId: string
-  ): Promise<Transaction>;
 }
 

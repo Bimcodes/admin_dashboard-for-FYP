@@ -1,6 +1,6 @@
 'use client';
 
-import { ScrollText, RefreshCw, ArrowUpRight, ArrowDownLeft, Flame, Coins, Filter } from 'lucide-react';
+import { ScrollText, RefreshCw, ArrowUpRight, ArrowDownLeft, Flame, Coins, Filter, ArrowRightLeft } from 'lucide-react';
 import { Transaction } from '../models/types';
 import { TxFilter } from '../viewmodels/useTransactionHistoryViewModel';
 
@@ -20,6 +20,7 @@ const TYPE_CONFIG: Record<
 > = {
   MINT:      { label: 'MINT',      color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', Icon: Coins },
   WHOLESALE: { label: 'WHOLESALE', color: 'text-indigo-400',  bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20',  Icon: ArrowDownLeft },
+  RETAIL:    { label: 'RETAIL',    color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   Icon: ArrowRightLeft },
   FARE:      { label: 'FARE',      color: 'text-violet-400',  bg: 'bg-violet-500/10',  border: 'border-violet-500/20',  Icon: ArrowUpRight },
   BURN:      { label: 'BURN',      color: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/20',    Icon: Flame },
 };
@@ -30,7 +31,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string 
   FAILED:  { color: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/20'     },
 };
 
-const FILTERS: TxFilter[] = ['ALL', 'MINT', 'WHOLESALE', 'FARE', 'BURN'];
+const FILTERS: TxFilter[] = ['ALL', 'MINT', 'WHOLESALE', 'RETAIL', 'FARE', 'BURN'];
 
 function shortId(id: string | null | undefined): string {
   if (!id) return '—';
