@@ -26,6 +26,7 @@ void main() async {
     'generate_codebase.dart',
     'codebase.txt',
     'health_center.txt',
+    '.env.local'
   };
 
   final ignoredExtensions = {
