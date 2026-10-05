@@ -9,6 +9,7 @@ interface FleetMonitoringProps {
   isLoading: boolean;
   error: string | null;
   isReconcilingId: string | null;
+  isAddingBus: boolean;
   onReconcile: (id: string) => void;
   onAddBus: (busLabel?: string) => void;
 }
@@ -22,42 +23,80 @@ export default function FleetMonitoringView({
   isLoading,
   error,
   isReconcilingId,
+  isAddingBus,
   onReconcile,
   onAddBus,
 }: FleetMonitoringProps) {
   const [newBusLabel, setNewBusLabel] = useState('');
+  const [plateError, setPlateError] = useState('');
+
+  const PLATE_REGEX = /^OAU-\d{3}$/;
+
+  const handlePlateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.toUpperCase();
+    setNewBusLabel(val);
+    if (val && !PLATE_REGEX.test(val)) {
+      setPlateError('Format: OAU-001');
+    } else {
+      setPlateError('');
+    }
+  };
 
   const handleAddBusSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (newBusLabel && !PLATE_REGEX.test(newBusLabel)) {
+      setPlateError('Plate must follow format: OAU-001');
+      return;
+    }
     onAddBus(newBusLabel);
     setNewBusLabel('');
+    setPlateError('');
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring & Nightly Reconciliation</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring &amp; Nightly Reconciliation</h1>
           <p className="text-slate-400 text-sm mt-0.5">Track live bus earnings and settle driver payouts by burning tokens</p>
         </div>
 
         {/* Add Bus Mini Form */}
-        <form onSubmit={handleAddBusSubmit} className="flex gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 max-w-sm w-full sm:w-auto">
-          <input
-            type="text"
-            value={newBusLabel}
-            onChange={(e) => setNewBusLabel(e.target.value)}
-            placeholder="Bus Label (Optional)"
-            className="bg-transparent border-none text-xs text-white placeholder-slate-500 pl-3 focus:outline-none focus:ring-0 w-full sm:w-44"
-          />
-          <button
-            type="submit"
-            className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
-          >
-            <Bus className="h-3.5 w-3.5" />
-            Add Bus
-          </button>
-        </form>
+        <div className="flex flex-col items-end gap-1">
+          <form onSubmit={handleAddBusSubmit} className="flex gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 max-w-sm w-full sm:w-auto">
+            <input
+              type="text"
+              value={newBusLabel}
+              onChange={handlePlateChange}
+              placeholder="e.g. OAU-001"
+              disabled={isAddingBus}
+              className="bg-transparent border-none text-xs text-white placeholder-slate-500 pl-3 focus:outline-none focus:ring-0 w-full sm:w-44 disabled:opacity-50 uppercase"
+            />
+            <button
+              type="submit"
+              disabled={isAddingBus || !!plateError}
+              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white rounded-md text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
+            >
+              {isAddingBus ? (
+                <>
+                  <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Bus className="h-3.5 w-3.5" />
+                  Add Bus
+                </>
+              )}
+            </button>
+          </form>
+          {plateError && (
+            <p className="text-rose-400 text-xs pr-1">{plateError}</p>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -102,7 +141,7 @@ export default function FleetMonitoringView({
                 {buses.map((bus) => (
                   <tr key={bus.id} className="hover:bg-slate-850/30 transition-colors">
                     <td className="py-4 px-6 font-mono text-xs font-bold text-indigo-400">{bus.id}</td>
-                    <td className="py-4 px-6 font-medium text-white">{bus.driverName || '—'}</td>
+                    <td className="py-4 px-6 font-medium text-white">{bus.plateNumber || '—'}</td>
                     <td className="py-4 px-6">{bus.passengerCount} passengers</td>
                     <td className="py-4 px-6 font-semibold text-white">₦{bus.tokensCollected.toLocaleString()}</td>
                     <td className="py-4 px-6">

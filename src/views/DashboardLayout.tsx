@@ -136,6 +136,7 @@ export default function DashboardLayout() {
             isLoading={fleetVM.isLoading}
             error={fleetVM.error}
             isReconcilingId={fleetVM.isReconcilingId}
+            isAddingBus={fleetVM.isAddingBus}
             onReconcile={fleetVM.reconcileBus}
             onAddBus={fleetVM.addBus}
           />

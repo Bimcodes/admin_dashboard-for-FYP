@@ -37,8 +37,8 @@ export interface Transaction {
 
 export interface Bus {
   id: string; // e.g. "BUS-001"
-  driverName: string | null; // Used as an optional bus label/plate number now
-  driverId: string | null;      // UUID FK to users table (nullable)
+  plateNumber: string | null; // The bus plate / label (e.g. OAU-001)
+  driverId: string | null;    // UUID FK to users table — the active bus lock (NULL = available)
   passengerCount: number;
   tokensCollected: number;
   isReconciled: boolean;

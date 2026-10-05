@@ -93,7 +93,7 @@ const initialTransactions: Transaction[] = [
 const initialBuses: Bus[] = [
   {
     id: 'BUS-001',
-    driverName: 'Mr. Babajide',
+    plateNumber: 'Mr. Babajide',
     driverId: null,
     passengerCount: 42,
     tokensCollected: 4200, // e.g. 100 tokens per passenger
@@ -102,7 +102,7 @@ const initialBuses: Bus[] = [
   },
   {
     id: 'BUS-002',
-    driverName: 'Mr. Okafor',
+    plateNumber: 'Mr. Okafor',
     driverId: null,
     passengerCount: 28,
     tokensCollected: 2800,
@@ -111,7 +111,7 @@ const initialBuses: Bus[] = [
   },
   {
     id: 'BUS-003',
-    driverName: 'Mr. Musa',
+    plateNumber: 'Mr. Musa',
     driverId: null,
     passengerCount: 50,
     tokensCollected: 5000,
@@ -266,7 +266,7 @@ export class MockFleetRepository implements IFleetRepository {
   async addBus(busLabel?: string): Promise<Bus> {
     const newBus: Bus = {
       id: `BUS-${Math.floor(100 + Math.random() * 900)}`,
-      driverName: busLabel || null,
+      plateNumber: busLabel || null,
       driverId: null,
       passengerCount: 0,
       tokensCollected: 0,

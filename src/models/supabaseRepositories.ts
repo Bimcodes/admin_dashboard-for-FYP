@@ -13,7 +13,7 @@
 //   transactions — id UUID, type TEXT, sender_wallet_id UUID?,
 //                  receiver_wallet_id UUID?, amount NUMERIC,
 //                  reference TEXT?, status TEXT, timestamp TIMESTAMPTZ
-//   vehicles     — id TEXT, driver_name TEXT, driver_id UUID?,
+//   vehicles     — id TEXT, plate_number TEXT, driver_id UUID?,
 //                  passenger_count INT, tokens_collected NUMERIC,
 //                  is_reconciled BOOLEAN, created_at TIMESTAMPTZ
 //
@@ -22,7 +22,7 @@
 //   wallet_type         → walletType
 //   sender_wallet_id    → senderWalletId
 //   receiver_wallet_id  → receiverWalletId
-//   driver_name         → driverName
+//   plate_number        → plateNumber
 //   driver_id           → driverId
 //   passenger_count     → passengerCount
 //   tokens_collected    → tokensCollected
@@ -263,7 +263,7 @@ export class SupabaseTransactionRepository implements ITransactionRepository {
 function toBus(row: Record<string, unknown>): Bus {
   return {
     id: row.id as string,
-    driverName: row.driver_name as string,
+    plateNumber: row.plate_number as string,
     driverId: (row.driver_id as string) ?? null,
     passengerCount: Number(row.passenger_count),
     tokensCollected: Number(row.tokens_collected),
@@ -276,7 +276,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
   async getBuses(): Promise<Bus[]> {
     const { data, error } = await getClient()
       .from('vehicles')
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .order('created_at', { ascending: true });
 
     if (error) throw new Error(`[FleetRepo] getBuses failed: ${error.message}`);
@@ -288,7 +288,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
       .from('vehicles')
       .update({ is_reconciled: true, passenger_count: 0, tokens_collected: 0 })
       .eq('id', busId)
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .single();
 
     if (error) throw new Error(`[FleetRepo] markBusAsReconciled failed: ${error.message}`);
@@ -296,18 +296,41 @@ export class SupabaseFleetRepository implements IFleetRepository {
   }
 
   async addBus(busLabel?: string): Promise<Bus> {
+    const normalizedLabel = busLabel?.trim().toUpperCase() || null;
+
+    // Guard: validate plate number format
+    if (normalizedLabel && !/^OAU-\d{3}$/.test(normalizedLabel)) {
+      throw new Error(`Invalid plate format "${normalizedLabel}". Must strictly follow pattern: OAU-001`);
+    }
+
+    // Guard: check for duplicate plate/label before doing anything
+    if (normalizedLabel) {
+      const { data: existing } = await getClient()
+        .from('vehicles')
+        .select('id')
+        .eq('plate_number', normalizedLabel)
+        .maybeSingle();
+
+      if (existing) {
+        throw new Error(`A bus with the plate "${normalizedLabel}" already exists.`);
+      }
+    }
+
     const { count } = await getClient()
       .from('vehicles').select('*', { count: 'exact', head: true });
     const busId = `BUS-${String((count ?? 0) + 1).padStart(3, '0')}`;
 
     // 1. Create a new Bus_Vault wallet.
-    //    We use crypto.randomUUID() as owner_id because vehicles.id is TEXT
-    //    and cannot be stored in a UUID column. The vehicle links back to the
-    //    wallet via vault_wallet_id instead.
+    //    Since wallets require a valid user as the owner (due to foreign key),
+    //    we will assign the current Admin's user ID as the owner of this bus vault.
+    const { data: { user } } = await getClient().auth.getUser();
+    if (!user) throw new Error("You must be logged in to add a bus.");
+    const adminUserId = user.id;
+
     const { data: wallet, error: walletError } = await getClient()
       .from('wallets')
       .insert({
-        owner_id: crypto.randomUUID(),
+        owner_id: adminUserId,
         wallet_type: 'Bus_Vault',
         balance: 0,
       })
@@ -321,13 +344,13 @@ export class SupabaseFleetRepository implements IFleetRepository {
       .from('vehicles')
       .insert({
         id: busId,
-        driver_name: busLabel || null,
+        plate_number: normalizedLabel,
         passenger_count: 0,
         tokens_collected: 0,
         is_reconciled: false,
         vault_wallet_id: wallet.id,
       })
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .single();
 
     if (error) throw new Error(`[FleetRepo] addBus failed: ${error.message}`);
@@ -344,7 +367,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
     return (data ?? []).map((row: Record<string, unknown>) => ({
       driverName: row.driver_name as string,
       driverId:   (row.driver_id as string) ?? null,
-      workDate:   row.work_date as string,   // Postgres DATE returned as "YYYY-MM-DD"
+      workDate:   row.work_date as string,
       tripCount:  Number(row.trip_count),
       totalFares: Number(row.total_fares),
     }));

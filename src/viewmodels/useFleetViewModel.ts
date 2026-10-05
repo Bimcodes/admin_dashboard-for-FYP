@@ -11,6 +11,7 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isReconcilingId, setIsReconcilingId] = useState<string | null>(null);
+  const [isAddingBus, setIsAddingBus] = useState<boolean>(false);
 
   const fetchBuses = useCallback(async () => {
     setIsLoading(true);
@@ -72,11 +73,15 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
   const addBus = useCallback(
     async (busLabel?: string) => {
       if (busLabel && !busLabel.trim()) busLabel = undefined;
+      setIsAddingBus(true);
       try {
         await fleetRepository.addBus(busLabel);
         await fetchBuses();
       } catch (err: any) {
         console.error('Error adding bus:', err);
+        alert(err?.message || 'Failed to add bus.');
+      } finally {
+        setIsAddingBus(false);
       }
     },
     [fetchBuses]
@@ -91,6 +96,7 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
     isLoading,
     error,
     isReconcilingId,
+    isAddingBus,
     reconcileBus,
     addBus,
     refresh: fetchBuses,
