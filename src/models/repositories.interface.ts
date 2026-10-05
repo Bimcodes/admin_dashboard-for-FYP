@@ -8,7 +8,6 @@ import { User, Wallet, Transaction, Bus, WalletType, DriverDailyRecord } from '.
 export interface IUserRepository {
   getUsers(): Promise<User[]>;
   getUserById(id: string): Promise<User | null>;
-  createUser(name: string, role: User['role']): Promise<User>;
 }
 
 export interface IWalletRepository {
@@ -16,20 +15,10 @@ export interface IWalletRepository {
   getWalletById(id: string): Promise<Wallet | null>;
   getWalletByOwnerId(ownerId: string): Promise<Wallet | null>;
   getWalletByType(type: WalletType): Promise<Wallet | null>;
-  updateBalance(walletId: string, amount: number): Promise<Wallet>;
-  createWallet(ownerId: string, type: WalletType, initialBalance: number): Promise<Wallet>;
 }
 
 export interface ITransactionRepository {
   getTransactions(): Promise<Transaction[]>;
-  createTransaction(
-    type: Transaction['type'],
-    senderWalletId: string | null,
-    receiverWalletId: string | null,
-    amount: number,
-    reference?: string,
-    status?: Transaction['status']
-  ): Promise<Transaction>;
   transfer(
     type: Transaction['type'],
     sender: string | null,
@@ -41,7 +30,7 @@ export interface ITransactionRepository {
 
 export interface IFleetRepository {
   getBuses(): Promise<Bus[]>;
-  markBusAsReconciled(busId: string): Promise<Bus>;
+  reconcileBus(busId: string): Promise<number>;
   addBus(busLabel?: string): Promise<Bus>;
   getDriverDailyRegister(): Promise<DriverDailyRecord[]>;
 }

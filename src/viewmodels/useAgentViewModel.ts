@@ -22,6 +22,7 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
   // Wholesale modal state
   const [transferAmount, setTransferAmount] = useState<string>('');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [bankReference, setBankReference] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
@@ -78,6 +79,12 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
         return;
       }
 
+      if (!bankReference.trim()) {
+        setModalErrorMessage("Enter the agent's bank payment reference.");
+        setIsSubmitting(false);
+        return;
+      }
+
       try {
         // 1. Fetch Treasury wallet
         const treasuryWallet = await walletRepository.getWalletByType('Treasury');
@@ -101,9 +108,11 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
           'WHOLESALE',
           treasuryWallet.id,
           agentWallet.id,
-          parsedAmount
+          parsedAmount,
+          bankReference.trim()
         );
 
+        setBankReference('');
         setSuccessMessage(`Successfully transferred ₦${parsedAmount.toLocaleString()} tokens to Agent Wallet.`);
         setTransferAmount('');
         await fetchAgentsAndBalances(); // Refresh lists
@@ -115,7 +124,7 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
         setIsSubmitting(false);
       }
     },
-    [transferAmount, selectedAgentId, fetchAgentsAndBalances, onTransferSuccess]
+    [transferAmount, selectedAgentId, bankReference, fetchAgentsAndBalances, onTransferSuccess]
   );
 
   useEffect(() => {
@@ -131,6 +140,8 @@ export const useAgentViewModel = (onTransferSuccess?: () => void) => {
     setTransferAmount,
     selectedAgentId,
     setSelectedAgentId,
+    bankReference,
+    setBankReference,
     isSubmitting,
     successMessage,
     setSuccessMessage,

@@ -1,19 +1,4 @@
 ====================================================
-FILE: .env.local
-====================================================
-
-# Supabase - same project used by the Flutter app
-NEXT_PUBLIC_SUPABASE_URL=https://rkdfcosecgyiqvridwvo.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrZGZjb3NlY2d5aXF2cmlkd3ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1OTQ1MjUsImV4cCI6MjA5OTE3MDUyNX0.cwFSzdDsYT9VJTKPa7BGF4Dxfjg6bKgRPCrTU_WaO8Y
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJrZGZjb3NlY2d5aXF2cmlkd3ZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzU5NDUyNSwiZXhwIjoyMDk5MTcwNTI1fQ.qzsjeDO7H5T6TAQIk4dtClXLNaos4e93Ts7vwpBxgoM
-
-# Paystack - replace with your real secret key from dashboard.paystack.com
-PAYSTACK_SECRET_KEY=sk_test_b9f9b60a652b15073e10e81433b4dbebbce7fd6f
-
-
-
-
-====================================================
 FILE: .gitignore
 ====================================================
 
@@ -694,7 +679,7 @@ const initialTransactions: Transaction[] = [
 const initialBuses: Bus[] = [
   {
     id: 'BUS-001',
-    driverName: 'Mr. Babajide',
+    plateNumber: 'Mr. Babajide',
     driverId: null,
     passengerCount: 42,
     tokensCollected: 4200, // e.g. 100 tokens per passenger
@@ -703,7 +688,7 @@ const initialBuses: Bus[] = [
   },
   {
     id: 'BUS-002',
-    driverName: 'Mr. Okafor',
+    plateNumber: 'Mr. Okafor',
     driverId: null,
     passengerCount: 28,
     tokensCollected: 2800,
@@ -712,7 +697,7 @@ const initialBuses: Bus[] = [
   },
   {
     id: 'BUS-003',
-    driverName: 'Mr. Musa',
+    plateNumber: 'Mr. Musa',
     driverId: null,
     passengerCount: 50,
     tokensCollected: 5000,
@@ -859,7 +844,7 @@ export class MockFleetRepository implements IFleetRepository {
     const bus = dbStore.getState().buses.find((b) => b.id === busId);
     if (!bus) throw new Error('Bus not found');
 
-    const updatedBus = { ...bus, isReconciled: true };
+    const updatedBus = { ...bus, isReconciled: true, passengerCount: 0, tokensCollected: 0 };
     dbStore.getState().updateBus(updatedBus);
     return updatedBus;
   }
@@ -867,7 +852,7 @@ export class MockFleetRepository implements IFleetRepository {
   async addBus(busLabel?: string): Promise<Bus> {
     const newBus: Bus = {
       id: `BUS-${Math.floor(100 + Math.random() * 900)}`,
-      driverName: busLabel || null,
+      plateNumber: busLabel || null,
       driverId: null,
       passengerCount: 0,
       tokensCollected: 0,
@@ -965,7 +950,7 @@ FILE: src\models\supabaseRepositories.ts
 //   transactions — id UUID, type TEXT, sender_wallet_id UUID?,
 //                  receiver_wallet_id UUID?, amount NUMERIC,
 //                  reference TEXT?, status TEXT, timestamp TIMESTAMPTZ
-//   vehicles     — id TEXT, driver_name TEXT, driver_id UUID?,
+//   vehicles     — id TEXT, plate_number TEXT, driver_id UUID?,
 //                  passenger_count INT, tokens_collected NUMERIC,
 //                  is_reconciled BOOLEAN, created_at TIMESTAMPTZ
 //
@@ -974,7 +959,7 @@ FILE: src\models\supabaseRepositories.ts
 //   wallet_type         → walletType
 //   sender_wallet_id    → senderWalletId
 //   receiver_wallet_id  → receiverWalletId
-//   driver_name         → driverName
+//   plate_number        → plateNumber
 //   driver_id           → driverId
 //   passenger_count     → passengerCount
 //   tokens_collected    → tokensCollected
@@ -1215,7 +1200,7 @@ export class SupabaseTransactionRepository implements ITransactionRepository {
 function toBus(row: Record<string, unknown>): Bus {
   return {
     id: row.id as string,
-    driverName: row.driver_name as string,
+    plateNumber: row.plate_number as string,
     driverId: (row.driver_id as string) ?? null,
     passengerCount: Number(row.passenger_count),
     tokensCollected: Number(row.tokens_collected),
@@ -1228,7 +1213,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
   async getBuses(): Promise<Bus[]> {
     const { data, error } = await getClient()
       .from('vehicles')
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .order('created_at', { ascending: true });
 
     if (error) throw new Error(`[FleetRepo] getBuses failed: ${error.message}`);
@@ -1238,9 +1223,9 @@ export class SupabaseFleetRepository implements IFleetRepository {
   async markBusAsReconciled(busId: string): Promise<Bus> {
     const { data, error } = await getClient()
       .from('vehicles')
-      .update({ is_reconciled: true })
+      .update({ is_reconciled: true, passenger_count: 0, tokens_collected: 0 })
       .eq('id', busId)
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .single();
 
     if (error) throw new Error(`[FleetRepo] markBusAsReconciled failed: ${error.message}`);
@@ -1248,18 +1233,41 @@ export class SupabaseFleetRepository implements IFleetRepository {
   }
 
   async addBus(busLabel?: string): Promise<Bus> {
+    const normalizedLabel = busLabel?.trim().toUpperCase() || null;
+
+    // Guard: validate plate number format
+    if (normalizedLabel && !/^OAU-\d{3}$/.test(normalizedLabel)) {
+      throw new Error(`Invalid plate format "${normalizedLabel}". Must strictly follow pattern: OAU-001`);
+    }
+
+    // Guard: check for duplicate plate/label before doing anything
+    if (normalizedLabel) {
+      const { data: existing } = await getClient()
+        .from('vehicles')
+        .select('id')
+        .eq('plate_number', normalizedLabel)
+        .maybeSingle();
+
+      if (existing) {
+        throw new Error(`A bus with the plate "${normalizedLabel}" already exists.`);
+      }
+    }
+
     const { count } = await getClient()
       .from('vehicles').select('*', { count: 'exact', head: true });
     const busId = `BUS-${String((count ?? 0) + 1).padStart(3, '0')}`;
 
     // 1. Create a new Bus_Vault wallet.
-    //    We use crypto.randomUUID() as owner_id because vehicles.id is TEXT
-    //    and cannot be stored in a UUID column. The vehicle links back to the
-    //    wallet via vault_wallet_id instead.
+    //    Since wallets require a valid user as the owner (due to foreign key),
+    //    we will assign the current Admin's user ID as the owner of this bus vault.
+    const { data: { user } } = await getClient().auth.getUser();
+    if (!user) throw new Error("You must be logged in to add a bus.");
+    const adminUserId = user.id;
+
     const { data: wallet, error: walletError } = await getClient()
       .from('wallets')
       .insert({
-        owner_id: crypto.randomUUID(),
+        owner_id: adminUserId,
         wallet_type: 'Bus_Vault',
         balance: 0,
       })
@@ -1273,13 +1281,13 @@ export class SupabaseFleetRepository implements IFleetRepository {
       .from('vehicles')
       .insert({
         id: busId,
-        driver_name: busLabel || null,
+        plate_number: normalizedLabel,
         passenger_count: 0,
         tokens_collected: 0,
         is_reconciled: false,
         vault_wallet_id: wallet.id,
       })
-      .select('id, driver_name, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
+      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
       .single();
 
     if (error) throw new Error(`[FleetRepo] addBus failed: ${error.message}`);
@@ -1296,7 +1304,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
     return (data ?? []).map((row: Record<string, unknown>) => ({
       driverName: row.driver_name as string,
       driverId:   (row.driver_id as string) ?? null,
-      workDate:   row.work_date as string,   // Postgres DATE returned as "YYYY-MM-DD"
+      workDate:   row.work_date as string,
       tripCount:  Number(row.trip_count),
       totalFares: Number(row.total_fares),
     }));
@@ -1425,8 +1433,8 @@ export interface Transaction {
 
 export interface Bus {
   id: string; // e.g. "BUS-001"
-  driverName: string | null; // Used as an optional bus label/plate number now
-  driverId: string | null;      // UUID FK to users table (nullable)
+  plateNumber: string | null; // The bus plate / label (e.g. OAU-001)
+  driverId: string | null;    // UUID FK to users table — the active bus lock (NULL = available)
   passengerCount: number;
   tokensCollected: number;
   isReconciled: boolean;
@@ -1917,6 +1925,7 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isReconcilingId, setIsReconcilingId] = useState<string | null>(null);
+  const [isAddingBus, setIsAddingBus] = useState<boolean>(false);
 
   const fetchBuses = useCallback(async () => {
     setIsLoading(true);
@@ -1978,11 +1987,15 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
   const addBus = useCallback(
     async (busLabel?: string) => {
       if (busLabel && !busLabel.trim()) busLabel = undefined;
+      setIsAddingBus(true);
       try {
         await fleetRepository.addBus(busLabel);
         await fetchBuses();
       } catch (err: any) {
         console.error('Error adding bus:', err);
+        alert(err?.message || 'Failed to add bus.');
+      } finally {
+        setIsAddingBus(false);
       }
     },
     [fetchBuses]
@@ -1997,6 +2010,7 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
     isLoading,
     error,
     isReconcilingId,
+    isAddingBus,
     reconcileBus,
     addBus,
     refresh: fetchBuses,
@@ -2930,6 +2944,7 @@ export default function DashboardLayout() {
             isLoading={fleetVM.isLoading}
             error={fleetVM.error}
             isReconcilingId={fleetVM.isReconcilingId}
+            isAddingBus={fleetVM.isAddingBus}
             onReconcile={fleetVM.reconcileBus}
             onAddBus={fleetVM.addBus}
           />
@@ -3487,6 +3502,7 @@ interface FleetMonitoringProps {
   isLoading: boolean;
   error: string | null;
   isReconcilingId: string | null;
+  isAddingBus: boolean;
   onReconcile: (id: string) => void;
   onAddBus: (busLabel?: string) => void;
 }
@@ -3500,42 +3516,80 @@ export default function FleetMonitoringView({
   isLoading,
   error,
   isReconcilingId,
+  isAddingBus,
   onReconcile,
   onAddBus,
 }: FleetMonitoringProps) {
   const [newBusLabel, setNewBusLabel] = useState('');
+  const [plateError, setPlateError] = useState('');
+
+  const PLATE_REGEX = /^OAU-\d{3}$/;
+
+  const handlePlateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.toUpperCase();
+    setNewBusLabel(val);
+    if (val && !PLATE_REGEX.test(val)) {
+      setPlateError('Format: OAU-001');
+    } else {
+      setPlateError('');
+    }
+  };
 
   const handleAddBusSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (newBusLabel && !PLATE_REGEX.test(newBusLabel)) {
+      setPlateError('Plate must follow format: OAU-001');
+      return;
+    }
     onAddBus(newBusLabel);
     setNewBusLabel('');
+    setPlateError('');
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring & Nightly Reconciliation</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring &amp; Nightly Reconciliation</h1>
           <p className="text-slate-400 text-sm mt-0.5">Track live bus earnings and settle driver payouts by burning tokens</p>
         </div>
 
         {/* Add Bus Mini Form */}
-        <form onSubmit={handleAddBusSubmit} className="flex gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 max-w-sm w-full sm:w-auto">
-          <input
-            type="text"
-            value={newBusLabel}
-            onChange={(e) => setNewBusLabel(e.target.value)}
-            placeholder="Bus Label (Optional)"
-            className="bg-transparent border-none text-xs text-white placeholder-slate-500 pl-3 focus:outline-none focus:ring-0 w-full sm:w-44"
-          />
-          <button
-            type="submit"
-            className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
-          >
-            <Bus className="h-3.5 w-3.5" />
-            Add Bus
-          </button>
-        </form>
+        <div className="flex flex-col items-end gap-1">
+          <form onSubmit={handleAddBusSubmit} className="flex gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 max-w-sm w-full sm:w-auto">
+            <input
+              type="text"
+              value={newBusLabel}
+              onChange={handlePlateChange}
+              placeholder="e.g. OAU-001"
+              disabled={isAddingBus}
+              className="bg-transparent border-none text-xs text-white placeholder-slate-500 pl-3 focus:outline-none focus:ring-0 w-full sm:w-44 disabled:opacity-50 uppercase"
+            />
+            <button
+              type="submit"
+              disabled={isAddingBus || !!plateError}
+              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white rounded-md text-xs font-semibold px-3 py-1.5 transition-colors cursor-pointer shrink-0"
+            >
+              {isAddingBus ? (
+                <>
+                  <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Bus className="h-3.5 w-3.5" />
+                  Add Bus
+                </>
+              )}
+            </button>
+          </form>
+          {plateError && (
+            <p className="text-rose-400 text-xs pr-1">{plateError}</p>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -3580,7 +3634,7 @@ export default function FleetMonitoringView({
                 {buses.map((bus) => (
                   <tr key={bus.id} className="hover:bg-slate-850/30 transition-colors">
                     <td className="py-4 px-6 font-mono text-xs font-bold text-indigo-400">{bus.id}</td>
-                    <td className="py-4 px-6 font-medium text-white">{bus.driverName || '—'}</td>
+                    <td className="py-4 px-6 font-medium text-white">{bus.plateNumber || '—'}</td>
                     <td className="py-4 px-6">{bus.passengerCount} passengers</td>
                     <td className="py-4 px-6 font-semibold text-white">₦{bus.tokensCollected.toLocaleString()}</td>
                     <td className="py-4 px-6">

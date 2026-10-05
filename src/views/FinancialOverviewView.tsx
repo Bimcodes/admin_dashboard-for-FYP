@@ -143,7 +143,7 @@ export default function FinancialOverviewView({
             <span className="text-slate-400 font-semibold mt-1 block">₦{totalBurned.toLocaleString()}</span>
           </div>
         </div>
-        {difference !== 0 && (
+        {Math.abs(difference) > 0.01 && (
           <p className="text-rose-400 text-xs mt-2">
             Ledger mismatch of NGN {difference.toLocaleString()}. Investigate before continuing.
           </p>

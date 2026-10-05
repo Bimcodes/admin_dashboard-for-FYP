@@ -26,8 +26,12 @@ export const useMintingViewModel = (onMintSuccess?: () => void) => {
         return;
       }
 
-      // Reference is optional to speed up demonstrations
-      const finalReference = reference.trim() || undefined;
+      const finalReference = reference.trim();
+      if (!finalReference) {
+        setErrorMessage('Enter the bank deposit reference before minting.');
+        setIsSubmitting(false);
+        return;
+      }
 
       try {
         // 1. Fetch Treasury wallet

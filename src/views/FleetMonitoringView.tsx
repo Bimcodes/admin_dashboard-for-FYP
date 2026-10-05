@@ -15,8 +15,8 @@ interface FleetMonitoringProps {
 }
 
 /**
- * FleetMonitoringView - View layer for Fleet Monitoring & Nightly Reconciliation.
- * Allows driver payouts, token burning, and simulation of live fares.
+ * FleetMonitoringView - View layer for Fleet Monitoring & end-of-shift reconciliation.
+ * Allows driver payouts and token burning.
  */
 export default function FleetMonitoringView({
   buses,

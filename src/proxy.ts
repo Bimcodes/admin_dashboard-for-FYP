@@ -105,18 +105,18 @@ export async function proxy(request: NextRequest) {
 
   // ── Access Control Rules ──────────────────────────────────────────────────
 
-  // Rule 1: If the user is NOT logged in and is trying to access /dashboard,
-  // send them to /login immediately before any dashboard code runs.
-  if (!user && pathname.startsWith('/dashboard')) {
-    const loginUrl = new URL('/login', request.url);
-    return NextResponse.redirect(loginUrl);
+  let isAdmin = false;
+  if (user) {
+    const { data: row } = await supabase
+      .from('users').select('role').eq('id', user.id).single();
+    isAdmin = row?.role === 'Admin';
   }
 
-  // Rule 2: If the user IS logged in and navigates to /login, redirect them
-  // straight to the dashboard — they don't need to log in again.
-  if (user && pathname === '/login') {
-    const dashboardUrl = new URL('/dashboard', request.url);
-    return NextResponse.redirect(dashboardUrl);
+  if (!isAdmin && pathname.startsWith('/dashboard')) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  if (isAdmin && pathname === '/login') {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   // Rule 3: All other requests (public routes, API routes that match the

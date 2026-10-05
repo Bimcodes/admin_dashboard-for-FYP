@@ -36,27 +36,7 @@ export const useFleetViewModel = (onReconcileSuccess?: () => void) => {
         if (bus.isReconciled) throw new Error('Bus is already reconciled.');
         if (!bus.vaultWalletId) throw new Error('Bus has no linked vault wallet. Please re-register this bus.');
 
-        // 1. Fetch the real current vault balance
-        const vault = await walletRepository.getWalletById(bus.vaultWalletId);
-        if (!vault) throw new Error('Bus vault wallet not found in database.');
-
-        const burnAmount = vault.balance;
-
-        if (burnAmount > 0) {
-          // 2 & 3. Burn tokens (transfer from Bus_Vault to null)
-          //    sender = Bus_Vault (tokens leave), receiver = null (tokens destroyed).
-          //    reference encodes the reconciliation date for audit trail.
-          await transactionRepository.transfer(
-            'BURN',
-            bus.vaultWalletId,
-            null,
-            burnAmount,
-            `RECONCILE-${busId}-${new Date().toISOString().split('T')[0]}`
-          );
-        }
-
-        // 4. Mark vehicle as settled in the vehicles table
-        await fleetRepository.markBusAsReconciled(busId);
+        await fleetRepository.reconcileBus(busId);
 
         await fetchBuses(); // Refresh bus list
         if (onReconcileSuccess) onReconcileSuccess();

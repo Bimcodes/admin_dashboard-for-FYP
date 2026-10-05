@@ -72,18 +72,6 @@ export class SupabaseUserRepository implements IUserRepository {
 
     return { id: data.id, role: data.role as User['role'], name: data.name };
   }
-
-  async createUser(name: string, role: User['role']): Promise<User> {
-    const { data, error } = await getClient()
-      .from('users')
-      .insert({ name, role })
-      .select('id, role, name')
-      .single();
-
-    if (error) throw new Error(`[UserRepo] createUser failed: ${error.message}`);
-
-    return { id: data.id, role: data.role as User['role'], name: data.name };
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,34 +133,6 @@ export class SupabaseWalletRepository implements IWalletRepository {
     return data ? toWallet(data) : null;
   }
 
-  async updateBalance(walletId: string, amount: number): Promise<Wallet> {
-    // First fetch current balance, then add the delta
-    const current = await this.getWalletById(walletId);
-    if (!current) throw new Error(`[WalletRepo] Wallet ${walletId} not found`);
-
-    const newBalance = current.balance + amount;
-
-    const { data, error } = await getClient()
-      .from('wallets')
-      .update({ balance: newBalance })
-      .eq('id', walletId)
-      .select('id, owner_id, wallet_type, balance')
-      .single();
-
-    if (error) throw new Error(`[WalletRepo] updateBalance failed: ${error.message}`);
-    return toWallet(data);
-  }
-
-  async createWallet(ownerId: string, type: WalletType, initialBalance: number = 0): Promise<Wallet> {
-    const { data, error } = await getClient()
-      .from('wallets')
-      .insert({ owner_id: ownerId, wallet_type: type, balance: initialBalance })
-      .select('id, owner_id, wallet_type, balance')
-      .single();
-
-    if (error) throw new Error(`[WalletRepo] createWallet failed: ${error.message}`);
-    return toWallet(data);
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,34 +164,6 @@ export class SupabaseTransactionRepository implements ITransactionRepository {
 
     if (error) throw new Error(`[TransactionRepo] getTransactions failed: ${error.message}`);
     return (data ?? []).map(toTransaction);
-  }
-
-  async createTransaction(
-    type: Transaction['type'],
-    senderWalletId: string | null,
-    receiverWalletId: string | null,
-    amount: number,
-    reference?: string,
-    status: Transaction['status'] = 'SUCCESS'
-  ): Promise<Transaction> {
-    const payload: Record<string, unknown> = {
-      type,
-      sender_wallet_id: senderWalletId,
-      receiver_wallet_id: receiverWalletId,
-      amount,
-      status,
-      timestamp: new Date().toISOString(),
-    };
-    if (reference) payload.reference = reference;
-
-    const { data, error } = await getClient()
-      .from('transactions')
-      .insert(payload)
-      .select('id, type, sender_wallet_id, receiver_wallet_id, amount, timestamp, reference, status')
-      .single();
-
-    if (error) throw new Error(`[TransactionRepo] createTransaction failed: ${error.message}`);
-    return toTransaction(data);
   }
 
   async transfer(
@@ -283,16 +215,11 @@ export class SupabaseFleetRepository implements IFleetRepository {
     return (data ?? []).map(toBus);
   }
 
-  async markBusAsReconciled(busId: string): Promise<Bus> {
+  async reconcileBus(busId: string): Promise<number> {
     const { data, error } = await getClient()
-      .from('vehicles')
-      .update({ is_reconciled: true, passenger_count: 0, tokens_collected: 0 })
-      .eq('id', busId)
-      .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')
-      .single();
-
-    if (error) throw new Error(`[FleetRepo] markBusAsReconciled failed: ${error.message}`);
-    return toBus(data);
+      .rpc('reconcile_bus', { p_bus_id: busId });
+    if (error) throw new Error(`[FleetRepo] reconcileBus failed: ${error.message}`);
+    return Number(data);
   }
 
   async addBus(busLabel?: string): Promise<Bus> {
@@ -347,7 +274,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
         plate_number: normalizedLabel,
         passenger_count: 0,
         tokens_collected: 0,
-        is_reconciled: false,
+        is_reconciled: true,
         vault_wallet_id: wallet.id,
       })
       .select('id, plate_number, driver_id, vault_wallet_id, passenger_count, tokens_collected, is_reconciled')

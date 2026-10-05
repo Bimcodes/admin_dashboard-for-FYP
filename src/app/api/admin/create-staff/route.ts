@@ -7,14 +7,11 @@
 //     1. Generates a sequential staff code (AGT-001, DRV-001, etc.)
 //     2. Creates a Supabase Auth user (server-side, uses service_role key)
 //     3. Inserts a row into the `users` table
-//     4. Creates a matching wallet (Agent_Vault or Bus_Vault)
+//     4. Creates a matching wallet (agents only)
 //     5. Returns the credentials for QR code generation on the frontend
 //
 // SECURITY:
 //   Uses the service_role key via createSupabaseAdminClient().
-//   This route is protected by the fact that only authenticated admin sessions
-//   can reach the dashboard that calls it. In production, add session
-//   verification at the top of this handler.
 // =============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -65,7 +62,6 @@ export async function POST(request: NextRequest) {
     const nextNum = (count ?? 0) + 1;
     const prefix = role === 'Agent' ? 'AGT' : 'DRV';
     const staffCode = `${prefix}-${String(nextNum).padStart(3, '0')}`;
-    const walletType = role === 'Agent' ? 'Agent_Vault' : 'Bus_Vault';
 
     // ── 2. Create Supabase Auth user (service_role bypasses invite flow) ──────
     const tempPassword = generateTempPassword();
@@ -77,10 +73,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (authError) {
-      // Handle duplicate staff code collision (rare, but possible)
+      // Handle duplicate email collision
       if (authError.message.includes('already been registered')) {
         return NextResponse.json(
-          { error: `Staff code ${staffCode} already exists. Please try again.` },
+          { error: 'This email address is already registered.' },
           { status: 409 }
         );
       }
@@ -100,15 +96,17 @@ export async function POST(request: NextRequest) {
       throw new Error(`Users table insert failed: ${userInsertError.message}`);
     }
 
-    // ── 4. Create wallet ──────────────────────────────────────────────────────
-    const { error: walletError } = await adminClient
-      .from('wallets')
-      .insert({ owner_id: userId, wallet_type: walletType, balance: 0 });
+    // ── 4. Create wallet (agents only; bus vaults belong to buses) ──────────
+    if (role === 'Agent') {
+      const { error: walletError } = await adminClient
+        .from('wallets')
+        .insert({ owner_id: userId, wallet_type: 'Agent_Vault', balance: 0 });
 
-    if (walletError) {
-      await adminClient.from('users').delete().eq('id', userId);
-      await adminClient.auth.admin.deleteUser(userId);
-      throw new Error(`Wallet creation failed: ${walletError.message}`);
+      if (walletError) {
+        await adminClient.from('users').delete().eq('id', userId);
+        await adminClient.auth.admin.deleteUser(userId);
+        throw new Error(`Wallet creation failed: ${walletError.message}`);
+      }
     }
 
     // ── 5. Return credentials for QR generation ───────────────────────────────

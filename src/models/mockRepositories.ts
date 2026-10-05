@@ -254,13 +254,14 @@ export class MockFleetRepository implements IFleetRepository {
     return dbStore.getState().buses;
   }
 
-  async markBusAsReconciled(busId: string): Promise<Bus> {
+  async reconcileBus(busId: string): Promise<number> {
     const bus = dbStore.getState().buses.find((b) => b.id === busId);
     if (!bus) throw new Error('Bus not found');
 
+    const amount = bus.tokensCollected;
     const updatedBus = { ...bus, isReconciled: true, passengerCount: 0, tokensCollected: 0 };
     dbStore.getState().updateBus(updatedBus);
-    return updatedBus;
+    return amount;
   }
 
   async addBus(busLabel?: string): Promise<Bus> {

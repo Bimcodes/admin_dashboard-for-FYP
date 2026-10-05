@@ -120,6 +120,8 @@ export default function DashboardLayout() {
             setTransferAmount={agentVM.setTransferAmount}
             selectedAgentId={agentVM.selectedAgentId}
             setSelectedAgentId={agentVM.setSelectedAgentId}
+            bankReference={agentVM.bankReference}
+            setBankReference={agentVM.setBankReference}
             isSubmitting={agentVM.isSubmitting}
             successMessage={agentVM.successMessage}
             setSuccessMessage={agentVM.setSuccessMessage}
