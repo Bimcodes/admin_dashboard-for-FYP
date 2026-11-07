@@ -57,8 +57,8 @@ export default function FleetMonitoringView({
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring &amp; Nightly Reconciliation</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Track live bus earnings and settle driver payouts by burning tokens</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Fleet Monitoring</h1>
+          <p className="text-slate-400 text-sm mt-0.5">Monitor registered campus buses and live vault balances — driver payouts are settled in the Driver Register</p>
         </div>
 
         {/* Add Bus Mini Form */}
@@ -110,10 +110,10 @@ export default function FleetMonitoringView({
         <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <Bus className="h-5 w-5 text-indigo-400" />
-            Active Fleet Status & Ledger Settle
+            Active Fleet Status
           </h2>
           <span className="px-2.5 py-1 bg-slate-850 rounded-full text-xs font-semibold text-slate-400 border border-slate-800">
-            {buses.length} Active Routes
+            {buses.length} Registered Buses
           </span>
         </div>
 
@@ -131,10 +131,10 @@ export default function FleetMonitoringView({
                 <tr className="bg-slate-950/45 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/50">
                   <th className="py-4 px-6">Bus ID</th>
                   <th className="py-4 px-6">Label / Plate</th>
-                  <th className="py-4 px-6">Riders (Today)</th>
-                  <th className="py-4 px-6">Fares Collected</th>
-                  <th className="py-4 px-6">Ledger Status</th>
-                  <th className="py-4 px-6 text-right">Actions</th>
+                  <th className="py-4 px-6">Shift Status</th>
+                  <th className="py-4 px-6">Unsettled Riders</th>
+                  <th className="py-4 px-6">Unsettled Vault Balance</th>
+                  <th className="py-4 px-6">Vault Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-850 text-slate-300">
@@ -142,37 +142,28 @@ export default function FleetMonitoringView({
                   <tr key={bus.id} className="hover:bg-slate-850/30 transition-colors">
                     <td className="py-4 px-6 font-mono text-xs font-bold text-indigo-400">{bus.id}</td>
                     <td className="py-4 px-6 font-medium text-white">{bus.plateNumber || '—'}</td>
+                    <td className="py-4 px-6">
+                      {bus.driverId ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                          Driver on Shift
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                          Idle / Available
+                        </span>
+                      )}
+                    </td>
                     <td className="py-4 px-6">{bus.passengerCount} passengers</td>
                     <td className="py-4 px-6 font-semibold text-white">₦{bus.tokensCollected.toLocaleString()}</td>
                     <td className="py-4 px-6">
                       {bus.isReconciled ? (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          Reconciled & Burned
+                          Reconciled &amp; Burned
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          Uncleared Fare
+                          Pending in Driver Register
                         </span>
-                      )}
-                    </td>
-                    <td className="py-4 px-6 text-right space-x-2">
-                      {!bus.isReconciled && (
-                        <>
-                          <button
-                            onClick={() => onReconcile(bus.id)}
-                            disabled={isReconcilingId === bus.id}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition-all hover:-translate-y-0.5 active:translate-y-0 cursor-pointer shadow-md hover:shadow-rose-500/15 disabled:opacity-50"
-                          >
-                            {isReconcilingId === bus.id ? (
-                              'Processing...'
-                            ) : (
-                              <>
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Mark as Paid
-                              </>
-                            )}
-                          </button>
-                        </>
                       )}
                     </td>
                   </tr>
@@ -183,15 +174,13 @@ export default function FleetMonitoringView({
         )}
       </div>
 
-      {/* Burn Explanation Box */}
+      {/* Info Box pointing to Driver Register */}
       <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 flex gap-4">
-        <Flame className="h-7 w-7 text-rose-500 shrink-0 mt-0.5" />
+        <Flame className="h-7 w-7 text-indigo-400 shrink-0 mt-0.5" />
         <div>
-          <h3 className="text-sm font-semibold text-white">How does Token Burning work?</h3>
+          <h3 className="text-sm font-semibold text-white">Where do I settle Driver Payouts?</h3>
           <p className="text-xs text-slate-400 leading-relaxed mt-1">
-            When a driver completes their shift, they submit their QR tickets representing the <strong>Uncleared Bus Fares</strong>.
-            Clicking <strong>Mark as Paid</strong> signifies that the Transport Commission has paid the driver in real physical cash (fiat).
-            As double-entry, those digital tokens are permanently <strong>burned (deleted)</strong> from the digital circulation supply, keeping the ledger balanced with real cash reserves.
+            Because multiple drivers can operate the same bus across different shifts (or a driver can operate multiple buses), all payouts and token burning are performed per-driver under the <strong>Driver Register</strong> tab. Settling a driver&apos;s payout there automatically burns their share from the corresponding bus vault(s).
           </p>
         </div>
       </div>

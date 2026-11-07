@@ -11,6 +11,7 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle2,
+  Flame,
 } from 'lucide-react';
 import { DriverSummary } from '../viewmodels/useDriverRegisterViewModel';
 
@@ -60,9 +61,9 @@ export default function DriverRegisterView({
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Driver Register</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Driver Register &amp; Payout Reconciliation</h1>
           <p className="text-slate-400 text-sm mt-0.5">
-            Daily fare collection record for every driver — click a row to expand
+            Settle driver payouts by burning their unclaimed fare tokens — click a row to view daily breakdown
           </p>
         </div>
         <button
@@ -167,8 +168,8 @@ export default function DriverRegisterView({
                     </div>
                   </div>
 
-                  {/* Pay Driver Action Button */}
-                  {driver.driverId && driver.totalUnreconciledFares > 0 && onReconcileDriver && (
+                  {/* Pay Driver Action Button or Settled Badge */}
+                  {driver.driverId && driver.totalUnreconciledFares > 0 && onReconcileDriver ? (
                     <div
                       onClick={(e) => {
                         e.stopPropagation();
@@ -181,10 +182,15 @@ export default function DriverRegisterView({
                       ) : (
                         <>
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          Pay ₦{driver.totalUnreconciledFares.toLocaleString()}
+                          Mark as Paid (₦{driver.totalUnreconciledFares.toLocaleString()})
                         </>
                       )}
                     </div>
+                  ) : (
+                    <span className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Reconciled &amp; Burned
+                    </span>
                   )}
 
                   {/* Expand chevron */}
@@ -207,32 +213,44 @@ export default function DriverRegisterView({
                             <th className="py-3 px-6">Date</th>
                             <th className="py-3 px-6">Trips</th>
                             <th className="py-3 px-6">Fares Collected</th>
-                            <th className="py-3 px-6">Avg per Trip</th>
+                            <th className="py-3 px-6">Unclaimed</th>
+                            <th className="py-3 px-6">Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/50 text-slate-300">
-                          {driver.dailyRecords.map((rec) => (
-                            <tr
-                              key={rec.workDate}
-                              className="hover:bg-slate-850/30 transition-colors"
-                            >
-                              <td className="py-3 px-6 text-sm font-medium text-white">
-                                {formatDate(rec.workDate)}
-                              </td>
-                              <td className="py-3 px-6 text-sm">
-                                {rec.tripCount.toLocaleString()} passengers
-                              </td>
-                              <td className="py-3 px-6 text-sm font-semibold text-emerald-400">
-                                ₦{rec.totalFares.toLocaleString()}
-                              </td>
-                              <td className="py-3 px-6 text-sm text-slate-400">
-                                ₦
-                                {rec.tripCount > 0
-                                  ? Math.round(rec.totalFares / rec.tripCount).toLocaleString()
-                                  : '0'}
-                              </td>
-                            </tr>
-                          ))}
+                          {driver.dailyRecords.map((rec) => {
+                            const unclaimed = rec.unreconciledFares ?? 0;
+                            return (
+                              <tr
+                                key={rec.workDate}
+                                className="hover:bg-slate-850/30 transition-colors"
+                              >
+                                <td className="py-3 px-6 text-sm font-medium text-white">
+                                  {formatDate(rec.workDate)}
+                                </td>
+                                <td className="py-3 px-6 text-sm">
+                                  {rec.tripCount.toLocaleString()} passengers
+                                </td>
+                                <td className="py-3 px-6 text-sm font-semibold text-emerald-400">
+                                  ₦{rec.totalFares.toLocaleString()}
+                                </td>
+                                <td className={`py-3 px-6 text-sm font-semibold ${unclaimed > 0 ? 'text-amber-400' : 'text-slate-500'}`}>
+                                  ₦{unclaimed.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-6 text-sm">
+                                  {unclaimed > 0 ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                      Uncleared Fare
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                      Settled
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         {/* Driver subtotal footer */}
                         <tfoot>
@@ -243,6 +261,9 @@ export default function DriverRegisterView({
                             </td>
                             <td className="py-3 px-6 text-emerald-400">
                               ₦{driver.totalLifetimeFares.toLocaleString()}
+                            </td>
+                            <td className="py-3 px-6 text-amber-400">
+                              ₦{driver.totalUnreconciledFares.toLocaleString()}
                             </td>
                             <td className="py-3 px-6 text-slate-500">
                               {driver.totalDaysWorked} day{driver.totalDaysWorked !== 1 ? 's' : ''}
@@ -258,6 +279,18 @@ export default function DriverRegisterView({
           })}
         </div>
       )}
+
+      {/* Burn Explanation Box */}
+      <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 flex gap-4">
+        <Flame className="h-7 w-7 text-rose-500 shrink-0 mt-0.5" />
+        <div>
+          <h3 className="text-sm font-semibold text-white">How does Driver Payout &amp; Token Burning work?</h3>
+          <p className="text-xs text-slate-400 leading-relaxed mt-1">
+            Every fare collected by a driver across any bus is tracked under their individual <strong>Unclaimed Payout</strong> balance.
+            Clicking <strong>Mark as Paid</strong> signifies that the Transport Commission has paid that specific driver in cash (fiat), burning only their unclaimed tokens from the corresponding bus vault(s) while leaving any other driver&apos;s unclaimed fares untouched.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
