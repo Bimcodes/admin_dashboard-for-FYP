@@ -11,6 +11,7 @@ export interface DriverSummary {
   driverId: string | null;
   totalDaysWorked: number;
   totalLifetimeFares: number;
+  totalUnreconciledFares: number;
   totalLifetimeTrips: number;
   dailyRecords: DriverDailyRecord[]; // ordered newest first (from DB)
 }
@@ -19,10 +20,11 @@ export interface DriverSummary {
  * ViewModel for the Driver Daily Register admin tab.
  * Fetches per-driver, per-day FARE aggregates and groups them by driver name.
  */
-export const useDriverRegisterViewModel = () => {
+export const useDriverRegisterViewModel = (onReconcileSuccess?: () => void) => {
   const [summaries, setSummaries] = useState<DriverSummary[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [reconcilingDriverId, setReconcilingDriverId] = useState<string | null>(null);
 
   const fetchRegister = useCallback(async () => {
     setIsLoading(true);
@@ -40,14 +42,16 @@ export const useDriverRegisterViewModel = () => {
             driverId: rec.driverId,
             totalDaysWorked: 0,
             totalLifetimeFares: 0,
+            totalUnreconciledFares: 0,
             totalLifetimeTrips: 0,
             dailyRecords: [],
           });
         }
         const summary = grouped.get(rec.driverName)!;
-        summary.totalDaysWorked    += 1;
-        summary.totalLifetimeFares += rec.totalFares;
-        summary.totalLifetimeTrips += rec.tripCount;
+        summary.totalDaysWorked        += 1;
+        summary.totalLifetimeFares     += rec.totalFares;
+        summary.totalUnreconciledFares += (rec.unreconciledFares ?? 0);
+        summary.totalLifetimeTrips     += rec.tripCount;
         summary.dailyRecords.push(rec);
       }
 
@@ -65,9 +69,33 @@ export const useDriverRegisterViewModel = () => {
     }
   }, []);
 
+  const reconcileDriver = useCallback(
+    async (driverId: string) => {
+      setReconcilingDriverId(driverId);
+      try {
+        await fleetRepository.reconcileDriver(driverId);
+        await fetchRegister();
+        if (onReconcileSuccess) onReconcileSuccess();
+      } catch (err: any) {
+        console.error('Error reconciling driver:', err);
+        alert(err?.message || 'Failed to reconcile driver payout.');
+      } finally {
+        setReconcilingDriverId(null);
+      }
+    },
+    [fetchRegister, onReconcileSuccess]
+  );
+
   useEffect(() => {
     fetchRegister();
   }, [fetchRegister]);
 
-  return { summaries, isLoading, error, refresh: fetchRegister };
+  return {
+    summaries,
+    isLoading,
+    error,
+    reconcilingDriverId,
+    reconcileDriver,
+    refresh: fetchRegister,
+  };
 };

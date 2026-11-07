@@ -55,4 +55,5 @@ export interface DriverDailyRecord {
   workDate:   string;        // "YYYY-MM-DD" string
   tripCount:  number;
   totalFares: number;
+  unreconciledFares?: number; // Unsettled fares for that driver on that day
 }

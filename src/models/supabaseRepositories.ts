@@ -215,6 +215,13 @@ export class SupabaseFleetRepository implements IFleetRepository {
     return (data ?? []).map(toBus);
   }
 
+  async reconcileDriver(driverId: string): Promise<number> {
+    const { data, error } = await getClient()
+      .rpc('reconcile_driver', { p_driver_id: driverId });
+    if (error) throw new Error(`[FleetRepo] reconcileDriver failed: ${error.message}`);
+    return Number(data);
+  }
+
   async reconcileBus(busId: string): Promise<number> {
     const { data, error } = await getClient()
       .rpc('reconcile_bus', { p_bus_id: busId });
@@ -297,6 +304,7 @@ export class SupabaseFleetRepository implements IFleetRepository {
       workDate:   row.work_date as string,
       tripCount:  Number(row.trip_count),
       totalFares: Number(row.total_fares),
+      unreconciledFares: row.unreconciled_fares !== undefined ? Number(row.unreconciled_fares) : 0,
     }));
   }
 }

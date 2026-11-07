@@ -31,6 +31,7 @@ export interface ITransactionRepository {
 export interface IFleetRepository {
   getBuses(): Promise<Bus[]>;
   reconcileBus(busId: string): Promise<number>;
+  reconcileDriver(driverId: string): Promise<number>;
   addBus(busLabel?: string): Promise<Bus>;
   getDriverDailyRegister(): Promise<DriverDailyRecord[]>;
 }

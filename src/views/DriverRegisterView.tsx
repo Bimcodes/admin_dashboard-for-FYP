@@ -10,6 +10,7 @@ import {
   TrendingUp,
   RefreshCw,
   AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { DriverSummary } from '../viewmodels/useDriverRegisterViewModel';
 
@@ -17,14 +18,16 @@ interface DriverRegisterViewProps {
   summaries: DriverSummary[];
   isLoading: boolean;
   error: string | null;
+  reconcilingDriverId?: string | null;
+  onReconcileDriver?: (driverId: string) => void;
   onRefresh: () => void;
 }
 
 /**
  * DriverRegisterView — Admin tab showing a per-driver accordion register.
  *
- * Top level: one row per driver with lifetime totals.
- * Expanded:  daily breakdown (date | trips | fares collected).
+ * Top level: one row per driver with lifetime totals and unclaimed payout action.
+ * Expanded:  daily breakdown (date | trips | fares collected | settlement status).
  *
  * Matches the existing dark-slate dashboard design language.
  */
@@ -32,6 +35,8 @@ export default function DriverRegisterView({
   summaries,
   isLoading,
   error,
+  reconcilingDriverId,
+  onReconcileDriver,
   onRefresh,
 }: DriverRegisterViewProps) {
   const [expandedDriver, setExpandedDriver] = useState<string | null>(null);
@@ -148,6 +153,12 @@ export default function DriverRegisterView({
                       </p>
                     </div>
                     <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">Unclaimed Payout</p>
+                      <p className={`text-sm font-bold mt-0.5 ${driver.totalUnreconciledFares > 0 ? 'text-amber-400' : 'text-slate-500'}`}>
+                        ₦{driver.totalUnreconciledFares.toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider">Lifetime Fares</p>
                       <p className="text-sm font-bold text-emerald-400 mt-0.5 flex items-center gap-1 justify-end">
                         <TrendingUp className="h-3.5 w-3.5" />
@@ -155,6 +166,26 @@ export default function DriverRegisterView({
                       </p>
                     </div>
                   </div>
+
+                  {/* Pay Driver Action Button */}
+                  {driver.driverId && driver.totalUnreconciledFares > 0 && onReconcileDriver && (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onReconcileDriver(driver.driverId!);
+                      }}
+                      className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition-all shadow-md cursor-pointer shrink-0"
+                    >
+                      {reconcilingDriverId === driver.driverId ? (
+                        'Settling...'
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Pay ₦{driver.totalUnreconciledFares.toLocaleString()}
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {/* Expand chevron */}
                   <div className="ml-2 text-slate-500">

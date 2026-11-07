@@ -77,9 +77,14 @@ export default function DashboardLayout() {
   const overviewVM = useFinancialOverviewViewModel();
   const mintVM = useMintingViewModel(overviewVM.refresh);
   const agentVM = useAgentViewModel(overviewVM.refresh);
-  const fleetVM = useFleetViewModel(overviewVM.refresh);
+  const fleetVM = useFleetViewModel(() => {
+    overviewVM.refresh();
+  });
   const historyVM = useTransactionHistoryViewModel();
-  const registerVM = useDriverRegisterViewModel();
+  const registerVM = useDriverRegisterViewModel(() => {
+    overviewVM.refresh();
+    fleetVM.refresh();
+  });
 
   // Helper to render the view matching the active tab
   const renderTabContent = () => {
@@ -163,6 +168,8 @@ export default function DashboardLayout() {
             summaries={registerVM.summaries}
             isLoading={registerVM.isLoading}
             error={registerVM.error}
+            reconcilingDriverId={registerVM.reconcilingDriverId}
+            onReconcileDriver={registerVM.reconcileDriver}
             onRefresh={registerVM.refresh}
           />
         );

@@ -254,6 +254,10 @@ export class MockFleetRepository implements IFleetRepository {
     return dbStore.getState().buses;
   }
 
+  async reconcileDriver(_driverId: string): Promise<number> {
+    return 0;
+  }
+
   async reconcileBus(busId: string): Promise<number> {
     const bus = dbStore.getState().buses.find((b) => b.id === busId);
     if (!bus) throw new Error('Bus not found');
